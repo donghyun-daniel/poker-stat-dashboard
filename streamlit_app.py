@@ -4,6 +4,7 @@ import os
 import tempfile
 import sys
 from pathlib import Path
+import numpy as np
 
 # Set up path for module imports
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -108,7 +109,8 @@ st.markdown("""
         min-width: 100px;
         max-width: 130px;
     }
-    [data-testid="stDataFrame"] th:nth-child(7) {
+    [data-testid="stDataFrame"] th:nth-child(7),
+    [data-testid="stDataFrame"] th:nth-child(8) {
         min-width: 100px;
         max-width: 130px;
     }
@@ -164,6 +166,52 @@ def main():
     st.divider()
     st.caption("Poker Stats Dashboard © 2025")
 
+def calculate_prize_distribution(players_df):
+    """Calculate the prize distribution based on specified rules."""
+    
+    # Constants
+    ENTRY_FEE = 4000  # 4,000 won per player
+    FREE_REBUYS = 2   # First 2 rebuys are free
+    REBUY_FEE = 5000  # 5,000 won for each additional rebuy (3rd and beyond)
+    
+    # Get total players
+    player_count = len(players_df)
+    
+    # Calculate total prize pool
+    total_prize_pool = player_count * ENTRY_FEE  # Base entry fees
+    
+    # Add additional rebuy fees to the prize pool
+    for _, player in players_df.iterrows():
+        rebuy_count = player['Rebuy Count']
+        # Only charge for rebuys beyond the free limit
+        if rebuy_count > FREE_REBUYS:
+            additional_rebuys = rebuy_count - FREE_REBUYS
+            total_prize_pool += additional_rebuys * REBUY_FEE
+    
+    # Calculate prize for each rank
+    # For even distribution with equal intervals:
+    # First place gets the largest prize, last place gets 0
+    # The difference between consecutive ranks is constant
+    if player_count > 1:
+        interval = total_prize_pool / (player_count * (player_count - 1) / 2)
+        prizes = {}
+        
+        for rank in range(1, player_count + 1):
+            # Prize formula: decreases linearly with rank
+            prize = int(interval * (player_count - rank))
+            prizes[rank] = prize
+            
+        # Ensure total distributed prize matches the pool (handle rounding)
+        total_distributed = sum(prizes.values())
+        if total_distributed < total_prize_pool:
+            # Add remainder to first place
+            prizes[1] += (total_prize_pool - total_distributed)
+        
+        return prizes, total_prize_pool
+    else:
+        # If there's only one player, they get the entire pool
+        return {1: total_prize_pool}, total_prize_pool
+
 def display_results(data):
     """Display analysis results visually."""
     
@@ -215,6 +263,10 @@ def display_results(data):
         'total_income': 'Income'
     })
     
+    # Count number of rebuy-ins (dividing by 1000, assuming each rebuy is 1000 chips)
+    # We'll assume the first buy-in is also included in the total_rebuy_amt
+    players_df['Rebuy Count'] = players_df['Total Rebuy-in'] // 1000
+    
     # Calculate win rate - round to exactly 2 decimal places and convert to string to ensure display format
     players_df['Win Rate (%)'] = players_df.apply(
         lambda row: f"{(row['Wins'] / row['Hands'] * 100):.2f}" if row['Hands'] > 0 else "0.00", 
@@ -224,8 +276,17 @@ def display_results(data):
     # Convert win rate back to float for sorting
     players_df['Win Rate (%)'] = players_df['Win Rate (%)'].astype(float)
     
+    # Calculate prize distribution
+    prize_distribution, total_prize_pool = calculate_prize_distribution(players_df)
+    
+    # Add prize to each player
+    players_df['Total Prize'] = players_df['Rank'].map(lambda x: prize_distribution.get(x, 0))
+    
+    # Show prize pool information
+    st.caption(f"Total Prize Pool: {total_prize_pool:,} won (Entry: 4,000 won, Additional rebuys: 5,000 won from 3rd rebuy)")
+    
     # Highlight positive values in green and negative values in red
-    def color_income(val):
+    def color_values(val):
         if isinstance(val, (int, float)):
             if val > 0:
                 return 'color: green'
@@ -234,19 +295,20 @@ def display_results(data):
         return ''
     
     # Select columns to display in the table with the new order
-    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy-in', 'Income']
+    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy-in', 'Income', 'Total Prize']
     
     # Display DataFrame - without index
     st.dataframe(
         players_df[display_cols].set_index('Rank').style.applymap(
-            color_income, 
-            subset=['Income']
+            color_values, 
+            subset=['Income', 'Total Prize']
         ),
         use_container_width=True,
         height=180
     )
     
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
+    st.caption("* Total Prize based on rank: 1st place receives the highest amount, decreasing by equal intervals to last place")
 
 if __name__ == "__main__":
     main() 

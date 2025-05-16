@@ -199,24 +199,31 @@ def calculate_prize_distribution(players_df):
         # Calculate the common difference for the arithmetic sequence
         # If we have n players, and want percentages p1, p2, ..., pn where:
         # - The sum p1 + p2 + ... + pn = 100%
-        # - p1 > p2 > ... > pn with equal differences (p1-p2 = p2-p3 = ... = p(n-1)-pn)
+        # - pn = 0 (last place gets 0%)
+        # - p1 > p2 > ... > p(n-1) > pn = 0 with equal differences
         
-        # For n players, we need to find d where:
-        # p1 = pn + (n-1)d
-        # And p1 + p2 + ... + pn = 100
-        # This gives us: n*pn + (n-1)*n*d/2 = 100
+        # For arithmetic sequence with last term = 0:
+        # p1, p2, ..., p(n-1), pn = 0
+        # Common difference = d
+        # p1 = (n-1)d
+        # The sum: n/2 * [(n-1)d + 0] = 100%
+        # (n-1)nd/2 = 100
+        # d = 200 / (n(n-1))
         
-        # Set minimum percentage (could be 0, but setting to a small value ensures everyone gets something)
-        min_percentage = 5.0 if player_count <= 4 else 0.0
-        
-        # Calculate common difference
-        common_diff = (100 - player_count * min_percentage) * 2 / (player_count * (player_count - 1))
+        # Calculate common difference for equal interval percentages
+        common_diff = 200 / (player_count * (player_count - 1))
         
         # Calculate percentages for each rank
         percentages = {}
         for rank in range(1, player_count + 1):
-            # Last place gets min_percentage, first place gets the most
-            percentage = min_percentage + (player_count - rank) * common_diff
+            # Last place gets 0%, first place gets the most
+            if rank == player_count:
+                # Last place always gets 0%
+                percentage = 0
+            else:
+                # Others get percentages in equal intervals
+                percentage = (player_count - rank) * common_diff
+            
             percentages[rank] = round(percentage, 2)
             
         # Adjust to ensure sum is exactly 100%
@@ -303,18 +310,8 @@ def display_results(data):
         'total_income': 'Income'
     })
     
-    # Calculate rebuy count - use a better estimation method
-    # The first buy-in doesn't count as a rebuy
-    initial_buyin = players_df['Total Rebuy-in'].min()
-    
-    # If players have different rebuy amounts, calculate rebuys
-    if players_df['Total Rebuy-in'].nunique() > 1:
-        # Count rebuys assuming each rebuy is the same as initial buy-in
-        # But don't count the first buy-in
-        players_df['Rebuy Count'] = (players_df['Total Rebuy-in'] / initial_buyin - 1).apply(lambda x: max(int(x), 0))
-    else:
-        # If everyone has the same buy-in and no rebuys, set count to 0
-        players_df['Rebuy Count'] = 0
+    # Simplified rebuy count calculation by subtracting 20000 (initial buy-in)
+    players_df['Rebuy Count'] = ((players_df['Total Rebuy-in'] - 20000) / 1000).apply(lambda x: max(int(x), 0))
     
     # Calculate win rate - round to exactly 2 decimal places and convert to string to ensure display format
     players_df['Win Rate (%)'] = players_df.apply(
@@ -365,7 +362,7 @@ def display_results(data):
         st.dataframe(
             players_df[['Player', 'Rank', 'Total Rebuy-in', 'Rebuy Count', 'Hands', 'Wins', 'Income', 'Prize %', 'Total Prize']]
         )
-        st.write("Note: Rebuy counts exclude the initial entry (first buy-in is not counted as a rebuy)")
+        st.write("Note: Rebuy Count calculation: ((Total Rebuy-in - 20000) / 1000)")
     
     # Display prize distribution calculations
     with st.expander("Prize Distribution Details", expanded=False):
@@ -383,7 +380,8 @@ def display_results(data):
         
         # Show prize allocation method
         st.write("Prize allocation method:")
-        st.write("- Percentages are calculated in equal intervals")
+        st.write("- Last place always gets 0%")
+        st.write("- Percentages increase in equal intervals from last to first place")
         st.write("- Prize amounts for 2nd place and lower are truncated to the nearest 100 won")
         st.write("- 1st place receives the remainder to ensure total matches pool exactly")
         
@@ -405,7 +403,7 @@ def display_results(data):
             st.error(f"Error: Prize sum ({total_prizes:,}) doesn't match prize pool ({total_prize_pool:,})")
     
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
-    st.caption("* Prize distribution calculated using arithmetic sequence with percentages summing to 100%")
+    st.caption("* Prize distribution: Arithmetic sequence starting with 0% for last place")
 
 if __name__ == "__main__":
     main() 

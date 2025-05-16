@@ -288,12 +288,7 @@ def display_results(data):
     st.markdown(f"**{start_time} ~ {end_time} ({duration_text})**", unsafe_allow_html=True)
     st.markdown(f"**{player_count} players** - {player_list}", unsafe_allow_html=True)
     
-    st.divider()
-    
-    # Display player information
-    st.subheader("Player Statistics")
-    
-    # Create DataFrame
+    # Create DataFrame for player stats
     players_df = pd.DataFrame(data['players'])
     
     # Sort by rank
@@ -310,8 +305,33 @@ def display_results(data):
         'total_income': 'Income'
     })
     
-    # Simplified rebuy count calculation by subtracting 20000 (initial buy-in)
-    players_df['Rebuy Count'] = ((players_df['Total Rebuy-in'] - 20000) / 1000).apply(lambda x: max(int(x), 0))
+    # Calculate rebuy count: Each player starts with 20,000 initial buy-in
+    # and subsequent rebuys are also 20,000 chips each
+    players_df['Rebuy Count'] = ((players_df['Total Rebuy-in'] - 20000) / 20000).apply(lambda x: max(int(x), 0))
+    
+    # Calculate prize distribution
+    prize_distribution, prize_percentages, total_prize_pool = calculate_prize_distribution(players_df)
+    
+    # Add prize pool info to game information section
+    st.markdown(f"**Prize Pool: {total_prize_pool:,} won**", unsafe_allow_html=True)
+    
+    # Calculate and show additional rebuy info
+    extra_rebuys = 0
+    FREE_REBUYS = 2  # First 2 rebuys are free
+    for _, player in players_df.iterrows():
+        if player['Rebuy Count'] > FREE_REBUYS:
+            extra_rebuys += (player['Rebuy Count'] - FREE_REBUYS)
+    
+    # Display rebuy info if there were any extra rebuys
+    if extra_rebuys > 0:
+        st.caption(f"Entry Fee: 5,000 won per player + Additional: {extra_rebuys * 5000:,} won from {extra_rebuys} extra rebuys")
+    else:
+        st.caption(f"Entry Fee: 5,000 won per player (No additional rebuys beyond free limit)")
+    
+    st.divider()
+    
+    # Display player information
+    st.subheader("Player Statistics")
     
     # Calculate win rate - round to exactly 2 decimal places and convert to string to ensure display format
     players_df['Win Rate (%)'] = players_df.apply(
@@ -322,18 +342,12 @@ def display_results(data):
     # Convert win rate back to float for sorting
     players_df['Win Rate (%)'] = players_df['Win Rate (%)'].astype(float)
     
-    # Calculate prize distribution
-    prize_distribution, prize_percentages, total_prize_pool = calculate_prize_distribution(players_df)
-    
     # Add prize to each player
     players_df['Prize %'] = players_df['Rank'].map(lambda x: prize_percentages.get(x, 0))
     players_df['Total Prize'] = players_df['Rank'].map(lambda x: prize_distribution.get(x, 0))
     
     # Format prize percentage as string with 2 decimal places
     players_df['Prize %'] = players_df['Prize %'].apply(lambda x: f"{x:.2f}%")
-    
-    # Show prize pool information
-    st.caption(f"Total Prize Pool: {total_prize_pool:,} won (Entry: 5,000 won, Additional rebuys: 5,000 won from 3rd rebuy)")
     
     # Highlight positive values in green and negative values in red
     def color_values(val):
@@ -362,7 +376,8 @@ def display_results(data):
         st.dataframe(
             players_df[['Player', 'Rank', 'Total Rebuy-in', 'Rebuy Count', 'Hands', 'Wins', 'Income', 'Prize %', 'Total Prize']]
         )
-        st.write("Note: Rebuy Count calculation: ((Total Rebuy-in - 20000) / 1000)")
+        st.write("Note: Rebuy Count = (Total Rebuy-in - 20000) / 20000")
+        st.write("This counts each 20,000 chips beyond the initial 20,000 buy-in as one rebuy")
     
     # Display prize distribution calculations
     with st.expander("Prize Distribution Details", expanded=False):
@@ -388,12 +403,11 @@ def display_results(data):
         # Show total prize pool breakdown
         st.write(f"Base entry fees: {len(players_df) * 5000:,} won ({len(players_df)} players × 5,000 won)")
         
-        extra_rebuys = 0
-        for _, player in players_df.iterrows():
-            if player['Rebuy Count'] > FREE_REBUYS:
-                extra_rebuys += (player['Rebuy Count'] - FREE_REBUYS)
-                
-        st.write(f"Additional rebuy fees: {extra_rebuys * 5000:,} won ({extra_rebuys} extra rebuys × 5,000 won)")
+        if extra_rebuys > 0:
+            st.write(f"Additional rebuy fees: {extra_rebuys * 5000:,} won ({extra_rebuys} extra rebuys × 5,000 won)")
+        else:
+            st.write("No additional rebuy fees (all rebuys within free limit)")
+            
         st.write(f"Total prize pool: {total_prize_pool:,} won")
         
         # Verify totals match
@@ -404,6 +418,7 @@ def display_results(data):
     
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
     st.caption("* Prize distribution: Arithmetic sequence starting with 0% for last place")
+    st.caption("* Rebuy Count = (Total Rebuy-in - 20000) / 20000 - counts additional buy-ins after initial entry")
 
 if __name__ == "__main__":
     main() 

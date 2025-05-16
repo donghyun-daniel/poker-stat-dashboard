@@ -350,22 +350,63 @@ def display_results(data):
                 return 'color: red'
         return ''
     
-    # Select columns to display in the table with the new order
-    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Rebuy Count', 'Income', 'Prize %', 'Total Prize']
+    # Select columns to display in the table with the new order - removing Prize columns
+    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Rebuy Count', 'Income']
     
     # Display DataFrame - without index
     st.dataframe(
         players_df[display_cols].set_index('Rank').style.applymap(
             color_values, 
-            subset=['Income', 'Total Prize']
+            subset=['Income']
         ),
         use_container_width=True,
         height=180
     )
     
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
-    st.caption("* Prize distribution: Arithmetic sequence starting with 0% for last place")
     st.caption("* Rebuy Count = Number of additional buy-ins after initial entry")
+    
+    # Add new Player Prize Statistics section
+    st.divider()
+    st.subheader("Player Prize Statistics")
+    
+    # Create a copy of the dataframe for prize calculations
+    prize_df = players_df.copy()
+    
+    # Calculate Net Prize (Prize - Total Fee)
+    prize_df['Net Prize'] = prize_df['Total Prize'] - prize_df['Total Fee']
+    
+    # Create prize table columns
+    prize_cols = ['Rank', 'Player', 'Prize %', 'Total Prize', 'Net Prize']
+    
+    # Apply colorization function for prize table
+    def prize_color_values(val):
+        if isinstance(val, (int, float)):
+            if val > 0:
+                return 'color: green'
+            elif val < 0:
+                return 'color: red'
+        return ''
+    
+    # Make a copy to avoid modifying the original dataframe
+    display_prize_df = prize_df[prize_cols].copy()
+    
+    # Format prize amounts with commas after calculations
+    display_prize_df['Total Prize'] = display_prize_df['Total Prize'].apply(lambda x: f"{x:,} won")
+    display_prize_df['Net Prize'] = display_prize_df['Net Prize'].apply(lambda x: f"{x:,} won")
+    
+    # Display prize statistics
+    st.dataframe(
+        display_prize_df.set_index('Rank').style.applymap(
+            prize_color_values,
+            subset=['Net Prize']
+        ),
+        use_container_width=True,
+        height=180
+    )
+    
+    st.caption("* Prize % = Percentage of the prize pool")
+    st.caption("* Net Prize = Prize amount minus entry fees")
 
 if __name__ == "__main__":
     main() 

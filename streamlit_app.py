@@ -110,7 +110,8 @@ st.markdown("""
         max-width: 130px;
     }
     [data-testid="stDataFrame"] th:nth-child(7),
-    [data-testid="stDataFrame"] th:nth-child(8) {
+    [data-testid="stDataFrame"] th:nth-child(8),
+    [data-testid="stDataFrame"] th:nth-child(9) {
         min-width: 100px;
         max-width: 130px;
     }
@@ -170,7 +171,7 @@ def calculate_prize_distribution(players_df):
     """Calculate the prize distribution based on specified rules."""
     
     # Constants
-    ENTRY_FEE = 4000  # 4,000 won per player
+    ENTRY_FEE = 5000  # 5,000 won per player
     FREE_REBUYS = 2   # First 2 rebuys are free
     REBUY_FEE = 5000  # 5,000 won for each additional rebuy (3rd and beyond)
     
@@ -180,6 +181,11 @@ def calculate_prize_distribution(players_df):
     # Calculate total prize pool
     total_prize_pool = player_count * ENTRY_FEE  # Base entry fees
     
+    # Debug information about rebuy counts
+    st.expander("Rebuy Details", expanded=False).dataframe(
+        players_df[['Player', 'Total Rebuy-in', 'Rebuy Count']]
+    )
+    
     # Add additional rebuy fees to the prize pool
     for _, player in players_df.iterrows():
         rebuy_count = player['Rebuy Count']
@@ -188,29 +194,63 @@ def calculate_prize_distribution(players_df):
             additional_rebuys = rebuy_count - FREE_REBUYS
             total_prize_pool += additional_rebuys * REBUY_FEE
     
-    # Calculate prize for each rank
-    # For even distribution with equal intervals:
-    # First place gets the largest prize, last place gets 0
-    # The difference between consecutive ranks is constant
+    # Calculate prize distribution percentages in arithmetic sequence
     if player_count > 1:
-        interval = total_prize_pool / (player_count * (player_count - 1) / 2)
+        # Calculate the common difference for the arithmetic sequence
+        # If we have n players, and want percentages p1, p2, ..., pn where:
+        # - The sum p1 + p2 + ... + pn = 100%
+        # - p1 > p2 > ... > pn with equal differences (p1-p2 = p2-p3 = ... = p(n-1)-pn)
+        
+        # For n players, we need to find d where:
+        # p1 = pn + (n-1)d
+        # And p1 + p2 + ... + pn = 100
+        # This gives us: n*pn + (n-1)*n*d/2 = 100
+        
+        # Set minimum percentage (could be 0, but setting to a small value ensures everyone gets something)
+        min_percentage = 5.0 if player_count <= 4 else 0.0
+        
+        # Calculate common difference
+        common_diff = (100 - player_count * min_percentage) * 2 / (player_count * (player_count - 1))
+        
+        # Calculate percentages for each rank
+        percentages = {}
+        for rank in range(1, player_count + 1):
+            # Last place gets min_percentage, first place gets the most
+            percentage = min_percentage + (player_count - rank) * common_diff
+            percentages[rank] = round(percentage, 2)
+            
+        # Adjust to ensure sum is exactly 100%
+        total_pct = sum(percentages.values())
+        if abs(total_pct - 100) > 0.01:  # If not very close to 100%
+            # Adjust first place to make sum exactly 100%
+            percentages[1] = round(percentages[1] + (100 - total_pct), 2)
+            
+        # Calculate prize amounts - truncate to nearest 100 won
         prizes = {}
+        prize_percentages = {}
+        total_truncated = 0
         
         for rank in range(1, player_count + 1):
-            # Prize formula: decreases linearly with rank
-            prize = int(interval * (player_count - rank))
-            prizes[rank] = prize
+            percentage = percentages[rank]
+            # Calculate exact amount
+            exact_prize = total_prize_pool * percentage / 100
+            # Truncate to nearest 100 won (floor to hundreds)
+            truncated_prize = int(exact_prize // 100 * 100)
             
-        # Ensure total distributed prize matches the pool (handle rounding)
-        total_distributed = sum(prizes.values())
-        if total_distributed < total_prize_pool:
-            # Add remainder to first place
-            prizes[1] += (total_prize_pool - total_distributed)
+            if rank > 1:  # For all except first place
+                prizes[rank] = truncated_prize
+                total_truncated += truncated_prize
+            
+            prize_percentages[rank] = percentage
         
-        return prizes, total_prize_pool
+        # First place gets the remainder to ensure total matches pool exactly
+        prizes[1] = total_prize_pool - total_truncated
+        
+        return prizes, prize_percentages, total_prize_pool
+        
     else:
-        # If there's only one player, they get the entire pool
-        return {1: total_prize_pool}, total_prize_pool
+        # If there's only one player, they get the entire pool (100%)
+        return {1: total_prize_pool}, {1: 100.0}, total_prize_pool
 
 def display_results(data):
     """Display analysis results visually."""
@@ -263,9 +303,18 @@ def display_results(data):
         'total_income': 'Income'
     })
     
-    # Count number of rebuy-ins (dividing by 1000, assuming each rebuy is 1000 chips)
-    # We'll assume the first buy-in is also included in the total_rebuy_amt
-    players_df['Rebuy Count'] = players_df['Total Rebuy-in'] // 1000
+    # Calculate rebuy count - use a better estimation method
+    # The first buy-in doesn't count as a rebuy
+    initial_buyin = players_df['Total Rebuy-in'].min()
+    
+    # If players have different rebuy amounts, calculate rebuys
+    if players_df['Total Rebuy-in'].nunique() > 1:
+        # Count rebuys assuming each rebuy is the same as initial buy-in
+        # But don't count the first buy-in
+        players_df['Rebuy Count'] = (players_df['Total Rebuy-in'] / initial_buyin - 1).apply(lambda x: max(int(x), 0))
+    else:
+        # If everyone has the same buy-in and no rebuys, set count to 0
+        players_df['Rebuy Count'] = 0
     
     # Calculate win rate - round to exactly 2 decimal places and convert to string to ensure display format
     players_df['Win Rate (%)'] = players_df.apply(
@@ -277,13 +326,17 @@ def display_results(data):
     players_df['Win Rate (%)'] = players_df['Win Rate (%)'].astype(float)
     
     # Calculate prize distribution
-    prize_distribution, total_prize_pool = calculate_prize_distribution(players_df)
+    prize_distribution, prize_percentages, total_prize_pool = calculate_prize_distribution(players_df)
     
     # Add prize to each player
+    players_df['Prize %'] = players_df['Rank'].map(lambda x: prize_percentages.get(x, 0))
     players_df['Total Prize'] = players_df['Rank'].map(lambda x: prize_distribution.get(x, 0))
     
+    # Format prize percentage as string with 2 decimal places
+    players_df['Prize %'] = players_df['Prize %'].apply(lambda x: f"{x:.2f}%")
+    
     # Show prize pool information
-    st.caption(f"Total Prize Pool: {total_prize_pool:,} won (Entry: 4,000 won, Additional rebuys: 5,000 won from 3rd rebuy)")
+    st.caption(f"Total Prize Pool: {total_prize_pool:,} won (Entry: 5,000 won, Additional rebuys: 5,000 won from 3rd rebuy)")
     
     # Highlight positive values in green and negative values in red
     def color_values(val):
@@ -295,7 +348,7 @@ def display_results(data):
         return ''
     
     # Select columns to display in the table with the new order
-    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy-in', 'Income', 'Total Prize']
+    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy-in', 'Income', 'Prize %', 'Total Prize']
     
     # Display DataFrame - without index
     st.dataframe(
@@ -307,8 +360,52 @@ def display_results(data):
         height=180
     )
     
+    # Add option to see full details including rebuy counts
+    with st.expander("Show Detailed Statistics", expanded=False):
+        st.dataframe(
+            players_df[['Player', 'Rank', 'Total Rebuy-in', 'Rebuy Count', 'Hands', 'Wins', 'Income', 'Prize %', 'Total Prize']]
+        )
+        st.write("Note: Rebuy counts exclude the initial entry (first buy-in is not counted as a rebuy)")
+    
+    # Display prize distribution calculations
+    with st.expander("Prize Distribution Details", expanded=False):
+        prize_df = pd.DataFrame({
+            'Rank': list(prize_percentages.keys()),
+            'Player': [players_df.loc[players_df['Rank'] == r, 'Player'].values[0] for r in prize_percentages.keys()],
+            'Percentage': [f"{p:.2f}%" for p in prize_percentages.values()],
+            'Prize Amount': [f"{prize_distribution[r]:,} won" for r in prize_percentages.keys()]
+        })
+        st.dataframe(prize_df)
+        
+        # Show total percentage to verify it adds up to 100%
+        total_pct = sum(prize_percentages.values())
+        st.write(f"Total percentage: {total_pct:.2f}% (should be 100%)")
+        
+        # Show prize allocation method
+        st.write("Prize allocation method:")
+        st.write("- Percentages are calculated in equal intervals")
+        st.write("- Prize amounts for 2nd place and lower are truncated to the nearest 100 won")
+        st.write("- 1st place receives the remainder to ensure total matches pool exactly")
+        
+        # Show total prize pool breakdown
+        st.write(f"Base entry fees: {len(players_df) * 5000:,} won ({len(players_df)} players × 5,000 won)")
+        
+        extra_rebuys = 0
+        for _, player in players_df.iterrows():
+            if player['Rebuy Count'] > FREE_REBUYS:
+                extra_rebuys += (player['Rebuy Count'] - FREE_REBUYS)
+                
+        st.write(f"Additional rebuy fees: {extra_rebuys * 5000:,} won ({extra_rebuys} extra rebuys × 5,000 won)")
+        st.write(f"Total prize pool: {total_prize_pool:,} won")
+        
+        # Verify totals match
+        total_prizes = sum(prize_distribution.values())
+        st.write(f"Sum of all prizes: {total_prizes:,} won (should match total prize pool)")
+        if total_prizes != total_prize_pool:
+            st.error(f"Error: Prize sum ({total_prizes:,}) doesn't match prize pool ({total_prize_pool:,})")
+    
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
-    st.caption("* Total Prize based on rank: 1st place receives the highest amount, decreasing by equal intervals to last place")
+    st.caption("* Prize distribution calculated using arithmetic sequence with percentages summing to 100%")
 
 if __name__ == "__main__":
     main() 

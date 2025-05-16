@@ -171,9 +171,9 @@ def calculate_prize_distribution(players_df):
     """Calculate the prize distribution based on specified rules."""
     
     # Constants
-    ENTRY_FEE = 5000  # 5,000 won per player
+    ENTRY_FEE = 4000  # 4,000 won per player
     FREE_REBUYS = 2   # First 2 rebuys are free
-    REBUY_FEE = 5000  # 5,000 won for each additional rebuy (3rd and beyond)
+    REBUY_FEE = 4000  # 4,000 won for each additional rebuy (3rd and beyond)
     
     # Get total players
     player_count = len(players_df)
@@ -319,9 +319,9 @@ def display_results(data):
     
     # Display rebuy info if there were any extra rebuys
     if extra_rebuys > 0:
-        st.caption(f"Entry Fee: 5,000 won per player + Additional: {extra_rebuys * 5000:,} won from {extra_rebuys} extra rebuys")
+        st.caption(f"Entry Fee: 4,000 won per player + Additional: {extra_rebuys * 4000:,} won from {extra_rebuys} extra rebuys")
     else:
-        st.caption(f"Entry Fee: 5,000 won per player (No additional rebuys beyond free limit)")
+        st.caption(f"Entry Fee: 4,000 won per player (No additional rebuys beyond free limit)")
     
     st.divider()
     

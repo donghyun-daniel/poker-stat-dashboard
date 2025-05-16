@@ -69,6 +69,13 @@ st.markdown("""
     .stMetric {
         padding: 0.5rem !important;
     }
+    /* Compact game info */
+    div[data-testid="stHorizontalBlock"] {
+        gap: 0.5rem !important;
+    }
+    div[data-testid="metric-container"] {
+        width: 100%;
+    }
     @media (max-width: 768px) {
         .row-widget.stButton {
             width: 100% !important;
@@ -135,21 +142,22 @@ def display_results(data):
     
     st.success("✅ Analysis Complete!")
     
-    # Display game information
+    # Display compact game information
     st.subheader("Game Information")
-    col1, col2, col3 = st.columns(3)
+    col1, col2 = st.columns(2)
     
-    with col1:
-        st.metric("Game Start", data['game_period']['start'].strftime("%Y-%m-%d %H:%M"))
-    with col2:
-        st.metric("Game End", data['game_period']['end'].strftime("%Y-%m-%d %H:%M"))
-    with col3:
-        st.metric("Total Hands", data['total_hands'])
-    
+    # Calculate duration
     duration = data['game_period']['end'] - data['game_period']['start']
     hours = duration.total_seconds() // 3600
     minutes = (duration.total_seconds() % 3600) // 60
-    st.write(f"Game Duration: {int(hours)} hours {int(minutes)} minutes")
+    duration_text = f"{int(hours)}h {int(minutes)}m"
+    
+    with col1:
+        st.metric("Start", data['game_period']['start'].strftime("%Y-%m-%d %H:%M"))
+    with col2:
+        st.metric("End", data['game_period']['end'].strftime("%Y-%m-%d %H:%M"))
+    
+    st.caption(f"Game Duration: {duration_text}")
     
     st.divider()
     
@@ -170,7 +178,7 @@ def display_results(data):
         'total_win_cnt': 'Wins',
         'total_hand_cnt': 'Hands',
         'total_chip': 'Final Chips',
-        'total_income': 'Profit/Loss'
+        'total_income': 'Income'
     })
     
     # Calculate win rate - to two decimal places
@@ -181,14 +189,14 @@ def display_results(data):
         color = 'red' if isinstance(val, (int, float)) and val < 0 else 'black'
         return f'color: {color}'
     
-    # Select columns to display in the table
-    display_cols = ['Rank', 'Player', 'Total Rebuy', 'Wins', 'Hands', 'Final Chips', 'Profit/Loss', 'Win Rate (%)']
+    # Select columns to display in the table with the new order
+    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy', 'Income']
     
     # Display DataFrame - without index
     st.dataframe(
         players_df[display_cols].set_index('Rank').style.applymap(
             highlight_negative, 
-            subset=['Profit/Loss']
+            subset=['Income']
         ),
         use_container_width=True,
         height=180

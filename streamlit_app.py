@@ -125,9 +125,6 @@ def main():
     # Mobile-friendly file uploader
     uploaded_file = st.file_uploader("Select Poker Log File (CSV)", type=['csv'], help="Upload a CSV log file downloaded from PokerNow.")
     
-    # Sample file download option
-    st.caption("Don't have a CSV file? [Download Sample File](https://github.com/donghyun-daniel/poker-stat-dashboard/raw/main/sample_poker_log.csv)")
-    
     if uploaded_file is not None:
         # Start file processing
         with st.spinner("Analyzing file..."):
@@ -150,19 +147,6 @@ def main():
                 st.error(f"Error occurred during file analysis: {str(e)}")
                 # Show error log
                 st.exception(e)
-    
-    # CSV file format guidance - compact display on mobile
-    with st.expander("💡 PokerNow Log File Format Guide"):
-        st.write("""
-        Upload a CSV log file downloaded from PokerNow.
-        Typically, the file name follows the format `poker_now_log_xxxxx.csv`.
-        """)
-        
-        st.code("""
-        "entry","timestamp","at"
-        "The player ""player1 @ a1b2c3"" joined the game with a stack of 1000","2023-01-01 12:00:00.000","0"
-        "The player ""player2 @ d4e5f6"" joined the game with a stack of 1000","2023-01-01 12:00:05.000","1"
-        """, language="csv")
     
     st.divider()
     st.caption("Poker Stats Dashboard © 2025")
@@ -276,12 +260,8 @@ def display_results(data):
     player_names = [player['user_name'] for player in data['players']]
     player_count = len(player_names)
     
-    # Format player list with proper commas and spacing
-    player_list = ", ".join(player_names)
-    
     # Display game info in a compact format
     st.markdown(f"**{start_time} ~ {end_time} ({duration_text})**", unsafe_allow_html=True)
-    st.markdown(f"**{player_count} players** - {player_list}", unsafe_allow_html=True)
     
     # Create DataFrame for player stats
     players_df = pd.DataFrame(data['players'])
@@ -304,24 +284,41 @@ def display_results(data):
     # and subsequent rebuys are also 20,000 chips each
     players_df['Rebuy Count'] = ((players_df['Rebuy-in Count'] - 20000) / 20000).apply(lambda x: max(int(x), 0))
     
+    # 각 플레이어별 참가 금액 계산 (기본 ENTRY_FEE + 추가 리바이인)
+    ENTRY_FEE = 4000  # 4,000 won per player
+    FREE_REBUYS = 2   # First 2 rebuys are free
+    REBUY_FEE = 4000  # 4,000 won for each additional rebuy (3rd and beyond)
+    
+    players_df['Entry Fee'] = ENTRY_FEE
+    players_df['Additional Fee'] = players_df['Rebuy Count'].apply(
+        lambda x: max(0, x - FREE_REBUYS) * REBUY_FEE
+    )
+    players_df['Total Fee'] = players_df['Entry Fee'] + players_df['Additional Fee']
+    
+    # 참가 금액별로 정렬 (큰 금액순, 같은 금액은 이름순)
+    fee_df = players_df[['Player', 'Total Fee', 'Entry Fee', 'Additional Fee', 'Rebuy Count']].copy()
+    fee_df = fee_df.sort_values(by=['Total Fee', 'Player'], ascending=[False, True])
+    
     # Calculate prize distribution
     prize_distribution, prize_percentages, total_prize_pool = calculate_prize_distribution(players_df)
     
     # Add prize pool info to game information section
     st.markdown(f"**Prize Pool: {total_prize_pool:,} won**", unsafe_allow_html=True)
     
-    # Calculate and show additional rebuy info
-    extra_rebuys = 0
-    FREE_REBUYS = 2  # First 2 rebuys are free
-    for _, player in players_df.iterrows():
-        if player['Rebuy Count'] > FREE_REBUYS:
-            extra_rebuys += (player['Rebuy Count'] - FREE_REBUYS)
+    # Show player fee contributions
+    st.markdown("**Player Contributions:**")
     
-    # Display rebuy info if there were any extra rebuys
-    if extra_rebuys > 0:
-        st.caption(f"Entry Fee: 4,000 won per player + Additional: {extra_rebuys * 4000:,} won from {extra_rebuys} extra rebuys")
-    else:
-        st.caption(f"Entry Fee: 4,000 won per player (No additional rebuys beyond free limit)")
+    # 금액에 콤마 추가하여 표시
+    fee_df['Total Fee'] = fee_df['Total Fee'].apply(lambda x: f"{x:,} won")
+    fee_df['Entry Fee'] = fee_df['Entry Fee'].apply(lambda x: f"{x:,} won")
+    fee_df['Additional Fee'] = fee_df['Additional Fee'].apply(lambda x: f"{x:,} won")
+    
+    # 소형 테이블로 참가 금액 표시
+    st.dataframe(
+        fee_df[['Player', 'Total Fee', 'Entry Fee', 'Additional Fee', 'Rebuy Count']],
+        use_container_width=True,
+        height=min(150, len(fee_df) * 35 + 38)  # 플레이어 수에 따라 높이 조정
+    )
     
     st.divider()
     

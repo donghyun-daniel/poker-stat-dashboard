@@ -69,12 +69,10 @@ st.markdown("""
     .stMetric {
         padding: 0.5rem !important;
     }
-    /* Compact game info */
-    div[data-testid="stHorizontalBlock"] {
-        gap: 0.5rem !important;
-    }
-    div[data-testid="metric-container"] {
-        width: 100%;
+    /* Game info text */
+    .game-info {
+        font-size: 0.9rem !important;
+        margin-bottom: 0.5rem !important;
     }
     @media (max-width: 768px) {
         .row-widget.stButton {
@@ -84,6 +82,35 @@ st.markdown("""
     /* Divider style */
     hr {
         margin: 1rem 0 !important;
+    }
+    /* Custom table column width */
+    [data-testid="stDataFrame"] table {
+        width: 100%;
+    }
+    [data-testid="stDataFrame"] th:nth-child(1) {
+        min-width: 60px;
+        max-width: 80px;
+    }
+    [data-testid="stDataFrame"] th:nth-child(2) {
+        min-width: 140px;
+        max-width: 200px;
+    }
+    [data-testid="stDataFrame"] th:nth-child(3) {
+        min-width: 70px;
+        max-width: 90px;
+    }
+    [data-testid="stDataFrame"] th:nth-child(4) {
+        min-width: 90px;
+        max-width: 110px;
+    }
+    [data-testid="stDataFrame"] th:nth-child(5), 
+    [data-testid="stDataFrame"] th:nth-child(6) {
+        min-width: 100px;
+        max-width: 130px;
+    }
+    [data-testid="stDataFrame"] th:nth-child(7) {
+        min-width: 100px;
+        max-width: 130px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -144,7 +171,10 @@ def display_results(data):
     
     # Display compact game information
     st.subheader("Game Information")
-    col1, col2 = st.columns(2)
+    
+    # Format date and time
+    start_time = data['game_period']['start'].strftime("%Y-%m-%d %H:%M")
+    end_time = data['game_period']['end'].strftime("%Y-%m-%d %H:%M")
     
     # Calculate duration
     duration = data['game_period']['end'] - data['game_period']['start']
@@ -152,12 +182,16 @@ def display_results(data):
     minutes = (duration.total_seconds() % 3600) // 60
     duration_text = f"{int(hours)}h {int(minutes)}m"
     
-    with col1:
-        st.metric("Start", data['game_period']['start'].strftime("%Y-%m-%d %H:%M"))
-    with col2:
-        st.metric("End", data['game_period']['end'].strftime("%Y-%m-%d %H:%M"))
+    # Get player names
+    player_names = [player['user_name'] for player in data['players']]
+    player_count = len(player_names)
     
-    st.caption(f"Game Duration: {duration_text}")
+    # Format player list with proper commas and spacing
+    player_list = ", ".join(player_names)
+    
+    # Display game info in a compact format
+    st.markdown(f"**{start_time} ~ {end_time} ({duration_text})**", unsafe_allow_html=True)
+    st.markdown(f"**{player_count} players** - {player_list}", unsafe_allow_html=True)
     
     st.divider()
     
@@ -174,28 +208,38 @@ def display_results(data):
     players_df = players_df.rename(columns={
         'user_name': 'Player',
         'rank': 'Rank',
-        'total_rebuy_amt': 'Total Rebuy',
+        'total_rebuy_amt': 'Total Rebuy-in',
         'total_win_cnt': 'Wins',
         'total_hand_cnt': 'Hands',
         'total_chip': 'Final Chips',
         'total_income': 'Income'
     })
     
-    # Calculate win rate - to two decimal places
-    players_df['Win Rate (%)'] = (players_df['Wins'] / players_df['Hands'] * 100).round(2)
+    # Calculate win rate - round to exactly 2 decimal places and convert to string to ensure display format
+    players_df['Win Rate (%)'] = players_df.apply(
+        lambda row: f"{(row['Wins'] / row['Hands'] * 100):.2f}" if row['Hands'] > 0 else "0.00", 
+        axis=1
+    )
     
-    # Highlight negative values in red
-    def highlight_negative(val):
-        color = 'red' if isinstance(val, (int, float)) and val < 0 else 'black'
-        return f'color: {color}'
+    # Convert win rate back to float for sorting
+    players_df['Win Rate (%)'] = players_df['Win Rate (%)'].astype(float)
+    
+    # Highlight positive values in green and negative values in red
+    def color_income(val):
+        if isinstance(val, (int, float)):
+            if val > 0:
+                return 'color: green'
+            elif val < 0:
+                return 'color: red'
+        return ''
     
     # Select columns to display in the table with the new order
-    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy', 'Income']
+    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy-in', 'Income']
     
     # Display DataFrame - without index
     st.dataframe(
         players_df[display_cols].set_index('Rank').style.applymap(
-            highlight_negative, 
+            color_income, 
             subset=['Income']
         ),
         use_container_width=True,

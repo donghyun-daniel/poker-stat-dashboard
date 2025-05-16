@@ -181,11 +181,6 @@ def calculate_prize_distribution(players_df):
     # Calculate total prize pool
     total_prize_pool = player_count * ENTRY_FEE  # Base entry fees
     
-    # Debug information about rebuy counts
-    st.expander("Rebuy Details", expanded=False).dataframe(
-        players_df[['Player', 'Total Rebuy-in', 'Rebuy Count']]
-    )
-    
     # Add additional rebuy fees to the prize pool
     for _, player in players_df.iterrows():
         rebuy_count = player['Rebuy Count']
@@ -298,7 +293,7 @@ def display_results(data):
     players_df = players_df.rename(columns={
         'user_name': 'Player',
         'rank': 'Rank',
-        'total_rebuy_amt': 'Total Rebuy-in',
+        'total_rebuy_amt': 'Rebuy-in Count',
         'total_win_cnt': 'Wins',
         'total_hand_cnt': 'Hands',
         'total_chip': 'Final Chips',
@@ -307,7 +302,7 @@ def display_results(data):
     
     # Calculate rebuy count: Each player starts with 20,000 initial buy-in
     # and subsequent rebuys are also 20,000 chips each
-    players_df['Rebuy Count'] = ((players_df['Total Rebuy-in'] - 20000) / 20000).apply(lambda x: max(int(x), 0))
+    players_df['Rebuy Count'] = ((players_df['Rebuy-in Count'] - 20000) / 20000).apply(lambda x: max(int(x), 0))
     
     # Calculate prize distribution
     prize_distribution, prize_percentages, total_prize_pool = calculate_prize_distribution(players_df)
@@ -359,7 +354,7 @@ def display_results(data):
         return ''
     
     # Select columns to display in the table with the new order
-    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Total Rebuy-in', 'Income', 'Prize %', 'Total Prize']
+    display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Rebuy Count', 'Income', 'Prize %', 'Total Prize']
     
     # Display DataFrame - without index
     st.dataframe(
@@ -371,54 +366,9 @@ def display_results(data):
         height=180
     )
     
-    # Add option to see full details including rebuy counts
-    with st.expander("Show Detailed Statistics", expanded=False):
-        st.dataframe(
-            players_df[['Player', 'Rank', 'Total Rebuy-in', 'Rebuy Count', 'Hands', 'Wins', 'Income', 'Prize %', 'Total Prize']]
-        )
-        st.write("Note: Rebuy Count = (Total Rebuy-in - 20000) / 20000")
-        st.write("This counts each 20,000 chips beyond the initial 20,000 buy-in as one rebuy")
-    
-    # Display prize distribution calculations
-    with st.expander("Prize Distribution Details", expanded=False):
-        prize_df = pd.DataFrame({
-            'Rank': list(prize_percentages.keys()),
-            'Player': [players_df.loc[players_df['Rank'] == r, 'Player'].values[0] for r in prize_percentages.keys()],
-            'Percentage': [f"{p:.2f}%" for p in prize_percentages.values()],
-            'Prize Amount': [f"{prize_distribution[r]:,} won" for r in prize_percentages.keys()]
-        })
-        st.dataframe(prize_df)
-        
-        # Show total percentage to verify it adds up to 100%
-        total_pct = sum(prize_percentages.values())
-        st.write(f"Total percentage: {total_pct:.2f}% (should be 100%)")
-        
-        # Show prize allocation method
-        st.write("Prize allocation method:")
-        st.write("- Last place always gets 0%")
-        st.write("- Percentages increase in equal intervals from last to first place")
-        st.write("- Prize amounts for 2nd place and lower are truncated to the nearest 100 won")
-        st.write("- 1st place receives the remainder to ensure total matches pool exactly")
-        
-        # Show total prize pool breakdown
-        st.write(f"Base entry fees: {len(players_df) * 5000:,} won ({len(players_df)} players × 5,000 won)")
-        
-        if extra_rebuys > 0:
-            st.write(f"Additional rebuy fees: {extra_rebuys * 5000:,} won ({extra_rebuys} extra rebuys × 5,000 won)")
-        else:
-            st.write("No additional rebuy fees (all rebuys within free limit)")
-            
-        st.write(f"Total prize pool: {total_prize_pool:,} won")
-        
-        # Verify totals match
-        total_prizes = sum(prize_distribution.values())
-        st.write(f"Sum of all prizes: {total_prizes:,} won (should match total prize pool)")
-        if total_prizes != total_prize_pool:
-            st.error(f"Error: Prize sum ({total_prizes:,}) doesn't match prize pool ({total_prize_pool:,})")
-    
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
     st.caption("* Prize distribution: Arithmetic sequence starting with 0% for last place")
-    st.caption("* Rebuy Count = (Total Rebuy-in - 20000) / 20000 - counts additional buy-ins after initial entry")
+    st.caption("* Rebuy Count = Number of additional buy-ins after initial entry")
 
 if __name__ == "__main__":
     main() 

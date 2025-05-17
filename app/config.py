@@ -17,7 +17,7 @@ This dashboard allows tracking and analysis of poker game statistics.
 Upload log files from PokerNow to track game results and player performance over time.
 
 Check out the repository at: 
-https://github.com/username/poker-stat-dashboard
+https://github.com/donghyun-daniel/poker-stat-dashboard
 """
 TABS = ["Upload Game Log", "Game History", "Player Statistics", "Admin"]
 

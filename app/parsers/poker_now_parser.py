@@ -235,11 +235,13 @@ class PokerNowLogParser:
     def _calculate_rebuy_amount(self, player_name: str) -> int:
         """
         Calculate the total rebuy amount for a player.
-        A rebuy is counted simply by looking at "joined the game with a stack" occurrences.
+        A rebuy is counted simply by looking at "joined the game with a stack" occurrences
+        or "The admin approved the player" occurrences.
         The first join is the initial buy-in, all subsequent joins are rebuys.
         """
-        # Define the pattern to match
+        # Define the patterns to match
         join_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
+        admin_approval_pattern = rf'The admin approved the player "{re.escape(player_name)} @ [^"]+" participation with a stack of (\d+)'
         
         # Track joins and rebuys
         initial_buyin = 20000  # Default initial buy-in amount
@@ -254,8 +256,16 @@ class PokerNowLogParser:
             join_match = re.search(join_pattern, entry_text)
             if join_match:
                 amount = int(join_match.group(1))
-                join_events.append((timestamp, amount))
+                join_events.append((timestamp, amount, "player joined"))
                 logger.debug(f"Join event for {player_name}: {amount} at {timestamp}")
+                continue
+                
+            # Look for admin approval
+            admin_match = re.search(admin_approval_pattern, entry_text)
+            if admin_match:
+                amount = int(admin_match.group(1))
+                join_events.append((timestamp, amount, "admin approved"))
+                logger.debug(f"Admin approval event for {player_name}: {amount} at {timestamp}")
         
         # The first join is the initial buy-in
         if join_events:
@@ -282,9 +292,9 @@ class PokerNowLogParser:
         
         if join_events:
             logger.info("Join history:")
-            for i, (time, amount) in enumerate(join_events):
-                event_type = "Initial buy-in" if i == 0 else f"Rebuy #{i}"
-                logger.info(f"  {event_type}: {amount} at {time}")
+            for i, (time, amount, event_type) in enumerate(join_events):
+                event_label = "Initial buy-in" if i == 0 else f"Rebuy #{i}"
+                logger.info(f"  {event_label}: {amount} at {time} via {event_type}")
         
         logger.info("=====================================")
         

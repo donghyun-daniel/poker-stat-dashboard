@@ -233,171 +233,123 @@ class PokerNowLogParser:
         self._calculate_rankings()
     
     def _calculate_rebuy_amount(self, player_name: str) -> int:
-        """Calculate the total rebuy amount for a player."""
-        # For the initial buy-in and rebuys, we need to look at the initial stack and any increases
-        initial_stack_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
-        
-        # Add patterns for away status and return
+        """
+        Calculate the total rebuy amount for a player based on actual rebuy pattern:
+        A rebuy occurs when a player loses all chips and then rejoins with 20,000 chips.
+        """
+        # Define the patterns to match
+        initial_join_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
+        stack_update_pattern = rf'"{re.escape(player_name)} @ [^"]+" \((\d+)\)'
         away_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" stands up'
         return_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" sits back with the stack of (\d+)'
         
-        # Define a new direct rebuy detection pattern (adding chips)
-        rebuy_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" (?:stand|sit)s with the stack of (\d+)'
-        stack_update_pattern = rf'"{re.escape(player_name)} @ [^"]+" \((\d+)\)'
-        
-        total_rebuy = 0
-        rebuy_details = []  # Store detailed history for debugging
-        
-        # Track player status and stack
+        # Keep track of player's state
         first_join = True
-        away_status = False
-        initial_buyin = 20000  # Default initial buy-in
+        initial_buyin = 20000  # Default initial buy-in amount
         current_stack = 0
-        last_stack = 0
-        rebuy_count = 0  # Explicitly track rebuy count
+        away_status = False
+        rebuy_count = 0
         
-        # Track all player stack changes
+        # For detailed logging
         stack_history = []
+        rebuy_events = []
         
+        # Process log entries chronologically
         for entry in self.sorted_game_data:
             entry_text = entry['entry']
-            timestamp = entry.get('datetime', '?')
+            timestamp = entry.get('datetime', datetime.min)
             
-            # Check for stack updates in "Player stacks:" entries
-            if "Player stacks:" in entry_text:
-                stack_match = re.search(stack_update_pattern, entry_text)
-                if stack_match:
-                    new_stack = int(stack_match.group(1))
-                    if current_stack > 0 and new_stack > current_stack and not away_status:
-                        # If stack increases while player is active, it's likely a rebuy
-                        stack_increase = new_stack - current_stack
-                        if stack_increase >= 15000:  # Consider substantial increases as rebuys
-                            rebuy_count += 1
-                            rebuy_details.append((timestamp, stack_increase, f"Stack increase (likely rebuy #{rebuy_count})"))
-                            logger.debug(f"Detected rebuy for {player_name}: +{stack_increase} at {timestamp}")
-                            total_rebuy += stack_increase
-                    
-                    # Update current stack
-                    last_stack = current_stack
-                    current_stack = new_stack
-                    stack_history.append((timestamp, current_stack, "Stack update"))
-            
-            # Initial join or actual rebuy (new participation in game)
-            join_match = re.search(initial_stack_pattern, entry_text)
+            # Check for initial join or rejoin
+            join_match = re.search(initial_join_pattern, entry_text)
             if join_match:
                 amount = int(join_match.group(1))
                 
-                # Save initial buy-in amount for the first join
                 if first_join:
+                    # First join sets the initial buy-in
                     initial_buyin = amount
                     current_stack = amount
-                    last_stack = amount
-                    total_rebuy = amount  # Initial buy-in is counted in total
-                    rebuy_details.append((timestamp, amount, "Initial buy-in"))
-                    logger.debug(f"Initial buy-in for {player_name}: {amount} at {timestamp}")
-                    first_join = False
                     stack_history.append((timestamp, current_stack, "Initial join"))
-                elif not away_status:
-                    # This is a genuine rebuy - player rejoined without being away
-                    rebuy_count += 1
-                    total_rebuy += amount
-                    rebuy_details.append((timestamp, amount, f"New join/rebuy #{rebuy_count}"))
-                    logger.debug(f"Rebuy #{rebuy_count} for {player_name}: +{amount} at {timestamp}")
-                    current_stack = amount
-                    last_stack = amount
-                    stack_history.append((timestamp, current_stack, "New join"))
+                    first_join = False
+                    logger.debug(f"Initial buy-in for {player_name}: {amount} at {timestamp}")
                 else:
-                    # Don't count return from away as rebuy
-                    rebuy_details.append((timestamp, amount, "Return from away"))
-                    logger.debug(f"Player {player_name} returned with {amount} at {timestamp} (Not a rebuy)")
-                    away_status = False
+                    # A rejoin after initial join
+                    if not away_status and current_stack == 0:
+                        # This is a true rebuy: player had 0 chips and is rejoining without being away
+                        rebuy_count += 1
+                        rebuy_events.append((timestamp, amount, f"REBUY #{rebuy_count} after losing all chips"))
+                        logger.info(f"TRUE REBUY detected for {player_name}: Lost all chips and rejoined with {amount} at {timestamp}")
+                    elif away_status:
+                        # Player was away and returned - not a rebuy
+                        logger.debug(f"Player {player_name} returned from away with {amount} at {timestamp} (Not a rebuy)")
+                        away_status = False
+                    else:
+                        logger.debug(f"Unusual join for {player_name} with {amount} at {timestamp} - had {current_stack} chips")
+                    
+                    # Update current stack
                     current_stack = amount
-                    last_stack = amount
-                    stack_history.append((timestamp, current_stack, "Return from away"))
+                    stack_history.append((timestamp, current_stack, "Rejoin"))
             
-            # Track away status
+            # Track player going away
             if re.search(away_pattern, entry_text):
                 away_status = True
-                rebuy_details.append((timestamp, current_stack, "Went away"))
-                logger.debug(f"Player {player_name} went away with stack {current_stack} at {timestamp}")
                 stack_history.append((timestamp, current_stack, "Went away"))
+                logger.debug(f"Player {player_name} went away with {current_stack} chips at {timestamp}")
             
-            # Track return from away status
+            # Track player returning
             return_match = re.search(return_pattern, entry_text)
             if return_match:
                 amount = int(return_match.group(1))
                 away_status = False
                 
-                # If the stack increased significantly during away, it might be a rebuy
-                if amount > (last_stack + 15000):  # Significant increase threshold
+                if current_stack == 0 and amount == initial_buyin:
+                    # Player had 0 chips, went away, and returned with initial buy-in
+                    # This is also considered a rebuy
                     rebuy_count += 1
-                    stack_increase = amount - last_stack
-                    rebuy_details.append((timestamp, stack_increase, f"Stack increase while away (likely rebuy #{rebuy_count})"))
-                    logger.debug(f"Detected rebuy during away for {player_name}: +{stack_increase} at {timestamp}")
-                    total_rebuy += stack_increase
+                    rebuy_events.append((timestamp, amount, f"REBUY #{rebuy_count} after losing all chips (from away)"))
+                    logger.info(f"TRUE REBUY from away detected for {player_name}: Lost all chips and returned with {amount} at {timestamp}")
                 
                 current_stack = amount
-                rebuy_details.append((timestamp, amount, "Sat back"))
-                logger.debug(f"Player {player_name} sat back with {amount} at {timestamp}")
-                stack_history.append((timestamp, current_stack, "Sat back"))
+                stack_history.append((timestamp, current_stack, "Returned from away"))
+                logger.debug(f"Player {player_name} returned with {amount} chips at {timestamp}")
             
-            # Check for direct rebuys (rare but possible)
-            rebuy_match = re.search(rebuy_pattern, entry_text)
-            if rebuy_match and not join_match and not return_match:  # Avoid duplicate matches
-                amount = int(rebuy_match.group(1))
-                if amount > (current_stack + 15000):  # Significant increase threshold
-                    rebuy_count += 1
-                    stack_increase = amount - current_stack
-                    rebuy_details.append((timestamp, stack_increase, f"Direct rebuy #{rebuy_count}"))
-                    logger.debug(f"Direct rebuy for {player_name}: +{stack_increase} at {timestamp}")
-                    total_rebuy += stack_increase
-                current_stack = amount
+            # Track stack updates in "Player stacks:" entries
+            if "Player stacks:" in entry_text:
+                stack_match = re.search(stack_update_pattern, entry_text)
+                if stack_match:
+                    new_stack = int(stack_match.group(1))
+                    
+                    # If stack becomes 0, log it - this is significant for rebuy detection
+                    if new_stack == 0 and current_stack > 0:
+                        logger.info(f"Player {player_name} lost all chips at {timestamp} (stack went from {current_stack} to 0)")
+                    
+                    # Update current stack
+                    current_stack = new_stack
+                    stack_history.append((timestamp, current_stack, "Stack update"))
         
-        # Validate rebuy count with a more robust general method
-        # Most games have players doing 0 or 1 rebuys, so if our count is much higher,
-        # it's likely due to detection errors rather than actual multiple rebuys
-        if rebuy_count > 2:
-            max_expected_rebuys = 2  # Most players don't do more than 2 rebuys in typical games
-            logger.info(f"Detected unusually high rebuy count ({rebuy_count}) for {player_name}")
-            
-            # If we detect more than 2 rebuys, let's verify by checking if there's a clear pattern
-            # of stack increases that match exactly to initial_buyin
-            exact_rebuy_count = 0
-            for i, (_, stack, event) in enumerate(stack_history):
-                if i > 0 and event in ["New join", "Sat back", "Stack update"]:
-                    prev_stack = stack_history[i-1][1]
-                    if abs(stack - prev_stack - initial_buyin) < 1000:  # Allow small variance
-                        exact_rebuy_count += 1
-                        logger.info(f"Found exact rebuy pattern: {prev_stack} -> {stack} ({event})")
-            
-            # If we found exact matches for rebuys, use that count instead
-            if exact_rebuy_count > 0 and exact_rebuy_count < rebuy_count:
-                logger.info(f"Correcting rebuy count from {rebuy_count} to {exact_rebuy_count} based on stack pattern analysis")
-                rebuy_count = exact_rebuy_count
-                # Recalculate total_rebuy accordingly
-                total_rebuy = initial_buyin + (rebuy_count * initial_buyin)
-            # If we still have an unusual count, use a conservative approach
-            elif rebuy_count > max_expected_rebuys:
-                logger.info(f"Using conservative rebuy count (1) for {player_name} instead of detected {rebuy_count}")
-                rebuy_count = 1
-                total_rebuy = initial_buyin + (rebuy_count * initial_buyin)
+        # Calculate total rebuy amount
+        # Initial buy-in + (number of rebuys * initial buy-in)
+        total_rebuy_amount = initial_buyin + (rebuy_count * initial_buyin)
         
-        # Add detailed logging for debugging 
+        # Add detailed logging for debugging
         logger.info(f"===== DEBUG INFO FOR {player_name} =====")
         logger.info(f"Initial buy-in: {initial_buyin}")
-        logger.info(f"Tracked rebuy count: {rebuy_count}")
-        logger.info(f"Total rebuy amount: {total_rebuy}")
-        logger.info(f"Traditional rebuy count calculation: {(total_rebuy - initial_buyin) / initial_buyin:.2f}")
-        logger.info(f"Detailed activity history:")
-        for i, (timestamp, amount, action_type) in enumerate(rebuy_details):
-            logger.info(f"  #{i+1}: {action_type} - {amount} at {timestamp}")
+        logger.info(f"True rebuy count: {rebuy_count}")
+        logger.info(f"Total rebuy amount: {total_rebuy_amount}")
+        logger.info(f"Final stack: {current_stack}")
+        
+        if rebuy_events:
+            logger.info(f"Rebuy events:")
+            for i, (time, amount, desc) in enumerate(rebuy_events):
+                logger.info(f"  #{i+1}: {desc} - {amount} at {time}")
+        else:
+            logger.info(f"No rebuy events detected")
+        
         logger.info(f"Stack history:")
-        for i, (timestamp, stack, event) in enumerate(stack_history):
-            logger.info(f"  #{i+1}: {event} - {stack} at {timestamp}")
+        for i, (time, stack, event) in enumerate(stack_history):
+            logger.info(f"  #{i+1}: {event} - {stack} at {time}")
         logger.info("=====================================")
         
-        # Return the adjusted total rebuy amount
-        return total_rebuy
+        return total_rebuy_amount
     
     def _get_out_time(self, player_name: str, 
                      chip_history: Dict[str, List[Tuple[datetime, int]]]) -> Optional[datetime]:

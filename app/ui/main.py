@@ -52,9 +52,9 @@ def load_database():
     Returns:
         PokerDBManager: Database manager instance
     """
+    # In the PokerDBManager constructor, connection is already established
+    # and tables are initialized, so we don't need to call additional methods
     db = PokerDBManager()
-    db.connect()
-    db.initialize_db_if_needed()
     return db
 
 def render_main_ui():

@@ -6,8 +6,15 @@ Analyzes player performance across multiple games.
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
+
+# Safely import plotly - if not available, handle gracefully
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    st.warning("Plotly library not available. Visualizations will be limited.")
+    PLOTLY_AVAILABLE = False
 
 from app.config import BAR_CHART_COLORS, LINE_CHART_COLORS
 
@@ -83,7 +90,7 @@ def render_stats_tab(db):
     st.caption("* Avg Rank = Average finishing position across all games")
     st.caption("* Best Rank = Best finishing position achieved")
     
-    # Only show visualizations if there are at least 2 players
+    # Only show visualizations if there are at least 2 players and plotly is available
     if len(df) < 2:
         st.info("Need at least 2 players for statistical comparisons.")
         return
@@ -94,6 +101,11 @@ def render_stats_tab(db):
         st.info("Need at least 2 games for meaningful statistics.")
         return
     
+    # Check if plotly is available before rendering visualizations
+    if not PLOTLY_AVAILABLE:
+        st.error("Visualization libraries are not available. Please check that plotly is installed.")
+        return
+        
     # Visualization section
     st.divider()
     st.subheader("Player Visualizations")
@@ -108,9 +120,13 @@ def render_stats_tab(db):
     create_rank_visualization(df)
     
     # Game history analysis section (if available)
-    game_history = db.get_player_game_history()
-    if game_history:
-        create_game_history_visualization(game_history, df["Player"].tolist())
+    try:
+        game_history = db.get_player_game_history()
+        if game_history:
+            create_game_history_visualization(game_history, df["Player"].tolist())
+    except (AttributeError, Exception) as e:
+        st.warning(f"Player game history visualization not available: {str(e)}")
+        st.info("This feature may be added in future updates.")
 
 def create_income_visualization(df):
     """

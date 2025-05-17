@@ -24,7 +24,18 @@ class PokerDBManager:
         """
         self.db_path = db_path
         self.conn = None
-        self.initialize_db()
+        
+        try:
+            self.initialize_db()
+        except Exception as e:
+            logger.error(f"Error during database initialization: {str(e)}")
+            # Provide a dummy connection or in-memory DB as fallback
+            try:
+                logger.info("Attempting to create in-memory database as fallback")
+                self.conn = duckdb.connect(":memory:")
+                self.initialize_db_tables()
+            except Exception as e2:
+                logger.error(f"Failed to create fallback database: {str(e2)}")
     
     def initialize_db(self):
         """Initialize the database connection and create tables if they don't exist."""
@@ -38,6 +49,20 @@ class PokerDBManager:
             self.conn = duckdb.connect(self.db_path)
             logger.info(f"Connected to database: {self.db_path}")
             
+            # Initialize tables
+            self.initialize_db_tables()
+            
+        except Exception as e:
+            logger.error(f"Error initializing database: {str(e)}")
+            raise
+    
+    def initialize_db_tables(self):
+        """Create database tables if they don't exist."""
+        if not self.conn:
+            logger.error("Cannot initialize tables: No database connection")
+            return
+            
+        try:
             # Create games table
             self.conn.execute("""
                 CREATE TABLE IF NOT EXISTS games (
@@ -79,14 +104,17 @@ class PokerDBManager:
             logger.info("Database tables initialized successfully")
             
         except Exception as e:
-            logger.error(f"Error initializing database: {str(e)}")
+            logger.error(f"Error creating database tables: {str(e)}")
             raise
     
     def close(self):
         """Close the database connection."""
         if self.conn:
-            self.conn.close()
-            logger.info("Database connection closed")
+            try:
+                self.conn.close()
+                logger.info("Database connection closed")
+            except Exception as e:
+                logger.error(f"Error closing database connection: {str(e)}")
     
     def game_exists(self, start_time: datetime, player_names: List[str]) -> bool:
         """
@@ -99,6 +127,10 @@ class PokerDBManager:
         Returns:
             True if the game already exists, False otherwise
         """
+        if not self.conn:
+            logger.error("Cannot check if game exists: No database connection")
+            return False
+            
         try:
             # Format datetime for SQL
             start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
@@ -409,6 +441,174 @@ class PokerDBManager:
             
         except Exception as e:
             logger.error(f"Error getting player statistics: {str(e)}")
+            return []
+    
+    def get_player_game_history(self) -> List[tuple]:
+        """
+        Get player game history data for visualization.
+        
+        Returns:
+            List of tuples containing (player_name, game_id, start_time, rank, income)
+        """
+        if not self.conn:
+            logger.error("Cannot get player game history: No database connection")
+            return []
+            
+        try:
+            query = """
+                SELECT 
+                    p.player_name,
+                    gp.game_id,
+                    g.start_time,
+                    gp.rank,
+                    gp.total_income
+                FROM game_players gp
+                JOIN players p ON gp.player_id = p.player_id
+                JOIN games g ON gp.game_id = g.game_id
+                ORDER BY g.start_time, gp.rank
+            """
+            
+            result = self.conn.execute(query).fetchall()
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting player game history: {str(e)}")
+            return []
+    
+    def get_player_results(self, game_id: str) -> List[tuple]:
+        """
+        Get player results for a specific game.
+        
+        Args:
+            game_id: ID of the game
+            
+        Returns:
+            List of tuples containing player results
+        """
+        if not self.conn:
+            logger.error("Cannot get player results: No database connection")
+            return []
+            
+        try:
+            query = f"""
+                SELECT 
+                    p.player_name,
+                    gp.rank,
+                    (gp.total_rebuy_amt / 20000) - 1 as rebuy_count,
+                    gp.total_win_cnt,
+                    gp.total_hand_cnt,
+                    gp.total_chip,
+                    gp.total_income
+                FROM game_players gp
+                JOIN players p ON gp.player_id = p.player_id
+                WHERE gp.game_id = '{game_id}'
+                ORDER BY gp.rank
+            """
+            
+            result = self.conn.execute(query).fetchall()
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting player results: {str(e)}")
+            return []
+    
+    def get_player_names_for_game(self, game_id: str) -> List[str]:
+        """
+        Get the names of players who participated in a specific game.
+        
+        Args:
+            game_id: ID of the game
+            
+        Returns:
+            List of player names
+        """
+        if not self.conn:
+            logger.error("Cannot get player names: No database connection")
+            return []
+            
+        try:
+            query = f"""
+                SELECT p.player_name
+                FROM game_players gp
+                JOIN players p ON gp.player_id = p.player_id
+                WHERE gp.game_id = '{game_id}'
+                ORDER BY p.player_name
+            """
+            
+            result = self.conn.execute(query).fetchall()
+            return [r[0] for r in result]
+            
+        except Exception as e:
+            logger.error(f"Error getting player names: {str(e)}")
+            return []
+            
+    def get_game_info(self, game_id: str) -> tuple:
+        """
+        Get basic information about a game.
+        
+        Args:
+            game_id: ID of the game
+            
+        Returns:
+            Tuple containing (start_time, log_file_name)
+        """
+        if not self.conn:
+            logger.error("Cannot get game info: No database connection")
+            return None
+            
+        try:
+            query = f"""
+                SELECT start_time, log_file_name
+                FROM games
+                WHERE game_id = '{game_id}'
+            """
+            
+            result = self.conn.execute(query).fetchone()
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting game info: {str(e)}")
+            return None
+            
+    def get_all_player_stats(self) -> List[tuple]:
+        """
+        Get statistics for all players to display in the stats tab.
+        
+        Returns:
+            List of tuples containing player statistics
+        """
+        if not self.conn:
+            logger.error("Cannot get all player stats: No database connection")
+            return []
+            
+        try:
+            query = """
+                SELECT 
+                    p.player_name,
+                    COUNT(DISTINCT gp.game_id) AS game_count,
+                    COUNT(DISTINCT gp.game_id) * 5000 AS total_fee,
+                    SUM(CASE WHEN gp.rank = 1 THEN 1 ELSE 0 END) * 5000 * 3 AS total_prize,
+                    SUM(gp.total_income) AS net_income,
+                    SUM(gp.total_win_cnt) AS total_wins,
+                    SUM(gp.total_hand_cnt) AS total_hands,
+                    CASE 
+                        WHEN SUM(gp.total_hand_cnt) > 0 THEN 
+                            (SUM(gp.total_win_cnt) * 100.0 / SUM(gp.total_hand_cnt))
+                        ELSE 0
+                    END AS win_rate,
+                    AVG(gp.rank) AS avg_rank,
+                    MIN(gp.rank) AS best_rank
+                FROM players p
+                JOIN game_players gp ON p.player_id = gp.player_id
+                GROUP BY p.player_name
+                ORDER BY net_income DESC
+            """
+            
+            result = self.conn.execute(query).fetchall()
+            return result
+            
+        except Exception as e:
+            logger.error(f"Error getting all player stats: {str(e)}")
             return []
 
 

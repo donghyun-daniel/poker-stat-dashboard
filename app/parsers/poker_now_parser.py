@@ -235,50 +235,40 @@ class PokerNowLogParser:
     def _calculate_rebuy_amount(self, player_name: str) -> int:
         """
         Calculate the total rebuy amount for a player.
-        A rebuy is counted simply by looking at "joined the game with a stack" occurrences
-        or "The admin approved the player" occurrences.
-        The first join is the initial buy-in, all subsequent joins are rebuys.
+        A rebuy is counted by looking only at "The admin approved the player" occurrences.
+        The first approval is the initial buy-in, all subsequent approvals are rebuys.
         """
-        # Define the patterns to match
-        join_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
+        # Define the pattern to match - only use admin approval pattern
         admin_approval_pattern = rf'The admin approved the player "{re.escape(player_name)} @ [^"]+" participation with a stack of (\d+)'
         
         # Track joins and rebuys
         initial_buyin = 20000  # Default initial buy-in amount
         join_events = []
         
-        # Process log entries chronologically to find all joins
+        # Process log entries chronologically to find all admin approvals
         for entry in self.sorted_game_data:
             entry_text = entry['entry']
             timestamp = entry.get('datetime', datetime.min)
             
-            # Look for player joining the game
-            join_match = re.search(join_pattern, entry_text)
-            if join_match:
-                amount = int(join_match.group(1))
-                join_events.append((timestamp, amount, "player joined"))
-                logger.debug(f"Join event for {player_name}: {amount} at {timestamp}")
-                continue
-                
             # Look for admin approval
             admin_match = re.search(admin_approval_pattern, entry_text)
             if admin_match:
                 amount = int(admin_match.group(1))
-                join_events.append((timestamp, amount, "admin approved"))
+                join_events.append((timestamp, amount))
                 logger.debug(f"Admin approval event for {player_name}: {amount} at {timestamp}")
         
-        # The first join is the initial buy-in
+        # The first admin approval is the initial buy-in
         if join_events:
             initial_buyin = join_events[0][1]
             logger.info(f"Initial buy-in for {player_name}: {initial_buyin}")
             
-            # Count all subsequent joins as rebuys
+            # Count all subsequent admin approvals as rebuys
             rebuy_count = max(0, len(join_events) - 1)
             logger.info(f"Detected {rebuy_count} rebuys for {player_name}")
         else:
-            # No join events found, which should not happen
+            # No admin approval events found
             rebuy_count = 0
-            logger.warning(f"No join events found for {player_name}")
+            logger.warning(f"No admin approval events found for {player_name}")
         
         # Calculate total rebuy amount (initial buy-in + rebuys)
         total_rebuy_amount = initial_buyin * (1 + rebuy_count)
@@ -286,15 +276,15 @@ class PokerNowLogParser:
         # Add detailed logging for debugging
         logger.info(f"===== DEBUG INFO FOR {player_name} =====")
         logger.info(f"Initial buy-in: {initial_buyin}")
-        logger.info(f"Join events: {len(join_events)}")
+        logger.info(f"Admin approval events: {len(join_events)}")
         logger.info(f"Rebuy count: {rebuy_count}")
         logger.info(f"Total rebuy amount: {total_rebuy_amount}")
         
         if join_events:
-            logger.info("Join history:")
-            for i, (time, amount, event_type) in enumerate(join_events):
+            logger.info("Admin approval history:")
+            for i, (time, amount) in enumerate(join_events):
                 event_label = "Initial buy-in" if i == 0 else f"Rebuy #{i}"
-                logger.info(f"  {event_label}: {amount} at {time} via {event_type}")
+                logger.info(f"  {event_label}: {amount} at {time}")
         
         logger.info("=====================================")
         

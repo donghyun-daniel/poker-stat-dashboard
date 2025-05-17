@@ -35,98 +35,103 @@ def render_stats_tab(db):
         st.info("No player statistics available. Please upload game logs first.")
         return
     
-    # Create DataFrame from player stats
-    columns = ["Player", "Game Count", "Total Fee", "Total Prize", "Net Income", 
-               "Total Wins", "Total Hands", "Win Rate", "Avg Rank", "Best Rank"]
-    df = pd.DataFrame(all_stats, columns=columns)
-    
-    # Sort by net income (descending)
-    df = df.sort_values("Net Income", ascending=False)
-    
-    # Display player performance section
-    st.subheader("Player Performance Summary")
-    
-    # Format monetary values with commas and 'won'
-    df['Total Fee Display'] = df['Total Fee'].apply(lambda x: f"{x:,} won")
-    df['Total Prize Display'] = df['Total Prize'].apply(lambda x: f"{x:,} won")
-    df['Net Income Display'] = df['Net Income'].apply(lambda x: f"{x:,} won")
-    
-    # Format win rate percentage with 2 decimal places
-    df['Win Rate Display'] = df['Win Rate'].apply(lambda x: f"{x:.2f}%")
-    
-    # Format rank values with 2 decimal places
-    df['Avg Rank Display'] = df['Avg Rank'].apply(lambda x: f"{x:.2f}")
-    
-    # Function to highlight positive/negative values
-    def color_values(val):
-        if isinstance(val, (int, float)):
-            if val > 0:
-                return "color: green"
-            elif val < 0:
-                return "color: red"
-        return ""
-    
-    # Select display columns and rename them for better readability
-    display_cols = ["Player", "Game Count", "Total Fee Display", "Total Prize Display", 
-                    "Net Income Display", "Win Rate Display", "Avg Rank Display", "Best Rank"]
-    
-    display_df = df[display_cols].copy()
-    display_df.columns = ["Player", "Games", "Total Fee", "Total Prize", 
-                         "Net Income", "Win Rate (%)", "Avg Rank", "Best Rank"]
-    
-    # Display player summary table
-    st.dataframe(
-        display_df.style.applymap(
-            color_values, 
-            subset=["Net Income"]
-        ),
-        use_container_width=True,
-        height=min(300, len(df) * 35 + 38)
-    )
-    
-    # Add explanations
-    st.caption("* Net Income = Total Prize - Total Fee")
-    st.caption("* Win Rate (%) = (Total Wins / Total Hands) × 100")
-    st.caption("* Avg Rank = Average finishing position across all games")
-    st.caption("* Best Rank = Best finishing position achieved")
-    
-    # Only show visualizations if there are at least 2 players and plotly is available
-    if len(df) < 2:
-        st.info("Need at least 2 players for statistical comparisons.")
-        return
-    
-    # Only show visualizations if there are at least 2 games
-    total_games = df["Game Count"].sum()
-    if total_games < 2:
-        st.info("Need at least 2 games for meaningful statistics.")
-        return
-    
-    # Check if plotly is available before rendering visualizations
-    if not PLOTLY_AVAILABLE:
-        st.error("Visualization libraries are not available. Please check that plotly is installed.")
-        return
-        
-    # Visualization section
-    st.divider()
-    st.subheader("Player Visualizations")
-    
-    # Create income comparison visualization
-    create_income_visualization(df)
-    
-    # Create win rate visualization
-    create_win_rate_visualization(df)
-    
-    # Create rank visualization
-    create_rank_visualization(df)
-    
-    # Game history analysis section (if available)
     try:
-        game_history = db.get_player_game_history()
-        if game_history:
-            create_game_history_visualization(game_history, df["Player"].tolist())
-    except (AttributeError, Exception) as e:
-        st.warning(f"Player game history visualization not available: {str(e)}")
-        st.info("This feature may be added in future updates.")
+        # Create DataFrame from player stats (all_stats는 튜플 리스트)
+        columns = ["Player", "Game Count", "Total Fee", "Total Prize", "Net Income", 
+                "Total Wins", "Total Hands", "Win Rate", "Avg Rank", "Best Rank"]
+        df = pd.DataFrame(all_stats, columns=columns)
+        
+        # Sort by net income (descending)
+        df = df.sort_values("Net Income", ascending=False)
+        
+        # Display player performance section
+        st.subheader("Player Performance Summary")
+        
+        # Format monetary values with commas and 'won'
+        df['Total Fee Display'] = df['Total Fee'].apply(lambda x: f"{x:,} won")
+        df['Total Prize Display'] = df['Total Prize'].apply(lambda x: f"{x:,} won")
+        df['Net Income Display'] = df['Net Income'].apply(lambda x: f"{x:,} won")
+        
+        # Format win rate percentage with 2 decimal places
+        df['Win Rate Display'] = df['Win Rate'].apply(lambda x: f"{x:.2f}%")
+        
+        # Format rank values with 2 decimal places
+        df['Avg Rank Display'] = df['Avg Rank'].apply(lambda x: f"{x:.2f}")
+        
+        # Function to highlight positive/negative values
+        def color_values(val):
+            if isinstance(val, (int, float)):
+                if val > 0:
+                    return "color: green"
+                elif val < 0:
+                    return "color: red"
+            return ""
+        
+        # Select display columns and rename them for better readability
+        display_cols = ["Player", "Game Count", "Total Fee Display", "Total Prize Display", 
+                        "Net Income Display", "Win Rate Display", "Avg Rank Display", "Best Rank"]
+        
+        display_df = df[display_cols].copy()
+        display_df.columns = ["Player", "Games", "Total Fee", "Total Prize", 
+                            "Net Income", "Win Rate (%)", "Avg Rank", "Best Rank"]
+        
+        # Display player summary table
+        st.dataframe(
+            display_df.style.applymap(
+                color_values, 
+                subset=["Net Income"]
+            ),
+            use_container_width=True,
+            height=min(300, len(df) * 35 + 38)
+        )
+        
+        # Add explanations
+        st.caption("* Net Income = Total Prize - Total Fee")
+        st.caption("* Win Rate (%) = (Total Wins / Total Hands) × 100")
+        st.caption("* Avg Rank = Average finishing position across all games")
+        st.caption("* Best Rank = Best finishing position achieved")
+        
+        # Only show visualizations if there are at least 2 players and plotly is available
+        if len(df) < 2:
+            st.info("Need at least 2 players for statistical comparisons.")
+            return
+        
+        # Only show visualizations if there are at least 2 games
+        total_games = df["Game Count"].sum()
+        if total_games < 2:
+            st.info("Need at least 2 games for meaningful statistics.")
+            return
+        
+        # Check if plotly is available before rendering visualizations
+        if not PLOTLY_AVAILABLE:
+            st.error("Visualization libraries are not available. Please check that plotly is installed.")
+            return
+            
+        # Visualization section
+        st.divider()
+        st.subheader("Player Visualizations")
+        
+        # Create income comparison visualization
+        create_income_visualization(df)
+        
+        # Create win rate visualization
+        create_win_rate_visualization(df)
+        
+        # Create rank visualization
+        create_rank_visualization(df)
+        
+        # Game history analysis section (if available)
+        try:
+            game_history = db.get_player_game_history()
+            if game_history:
+                create_game_history_visualization(game_history, df["Player"].tolist())
+        except (AttributeError, Exception) as e:
+            st.warning(f"Player game history visualization not available: {str(e)}")
+            st.info("This feature may be added in future updates.")
+    
+    except Exception as e:
+        st.error(f"Error processing player statistics: {str(e)}")
+        st.info("This could be due to missing data or database structure changes. Please try uploading a game log first.")
 
 def create_income_visualization(df):
     """

@@ -54,15 +54,20 @@ def _reset_database(db):
         st.info("Trying to fix the database structure...")
         
         try:
-            # Alternative approach - recreate tables instead of just deleting data
+            # Alternative approach - drop and recreate tables
+            # This is safer since DuckDB might have different table structure than SQLite
+            # and doesn't necessarily have sqlite_sequence table
+            
+            # Drop tables in the correct order to avoid foreign key constraints
             db.conn.execute("DROP TABLE IF EXISTS game_players")
             db.conn.execute("DROP TABLE IF EXISTS games")
             db.conn.execute("DROP TABLE IF EXISTS players")
             
             # Reinitialize the database
-            db.initialize_db()
+            db.initialize_db_tables()
             
             st.success("✅ Database has been successfully reset and rebuilt!")
             st.info("Please refresh the page to see the changes.")
         except Exception as e2:
-            st.error(f"Failed to rebuild database: {str(e2)}") 
+            st.error(f"Failed to rebuild database: {str(e2)}")
+            st.info("You may need to manually delete the database file and restart the application.") 

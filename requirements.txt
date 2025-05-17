@@ -10,4 +10,5 @@ wheel>=0.38.0
 rich==13.3.5
 markdown-it-py==2.2.0
 pygments==2.15.1
-mdurl==0.1.2 
+mdurl==0.1.2
+setuptools-distutils>=0.1.0 

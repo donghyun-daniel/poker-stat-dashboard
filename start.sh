@@ -6,20 +6,26 @@ source venv/bin/activate
 
 echo "Python 3.12.10 환경 사용 중..."
 
-# 기본 도구 설치
+# 기본 도구 설치 (먼저 distutils 관련 패키지 설치)
 echo "기본 패키지 설치 중..."
 pip install --upgrade pip
+pip install setuptools wheel setuptools-distutils
+
+# UV 설치 및 최적화된 패키지 설치
+echo "UV 설치 및 패키지 설치 준비 중..."
 pip install uv
-uv pip install setuptools wheel setuptools-distutils
 
 # 필수 패키지 설치
 echo "필수 패키지 설치 중..."
+# 먼저 numpy와 pandas 같은 핵심 패키지를 명시적으로 설치
+uv pip install "numpy>=1.26.0" "pandas>=2.2.0" "duckdb==0.9.2"
+# 이후 나머지 패키지 설치
 uv pip install -r requirements.txt
 
 # Rich 패키지 호환성 문제 해결
-echo "패키지 호환성 확인 중..."
+echo "Rich 패키지 호환성 확인 중..."
 uv pip uninstall -y rich markdown-it-py
-uv pip install rich==13.3.5
+uv pip install rich==13.3.5 markdown-it-py==2.2.0 pygments==2.15.1
 
 # 백그라운드에서 FastAPI 서버 실행
 echo "FastAPI 서버 시작 중..."

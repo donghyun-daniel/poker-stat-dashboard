@@ -2,14 +2,23 @@
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://streamlit.io/gallery)
 
-A web application for analyzing PokerNow game logs and providing player statistics.
+A web application for analyzing PokerNow game logs and providing player statistics. The application now includes a database to store and track statistics across multiple games.
 
 ## Features
 
 - Upload and analyze CSV logs from PokerNow
-- View player statistics (rankings, profits/losses, win rates)
+- Store game results in a database for historical tracking
+- View player statistics (rankings, profits/losses, win rates) across all games
+- Browse game history and detailed results
 - Visualize game data with interactive charts
 - Mobile-friendly interface for easy access anywhere
+
+## Database Features
+
+- **Game Storage**: Automatically detects and prevents duplicate game entries
+- **Player Tracking**: Maintains player statistics across multiple games
+- **Historical Analysis**: View trends and statistics over time
+- **Game Comparison**: Compare results between different game sessions
 
 ## Online Access
 
@@ -38,9 +47,22 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. Run the app:
+4. Start the application:
 ```bash
-streamlit run streamlit_app.py
+# Use the start script to run both API and UI
+./start.sh
+
+# Or run them separately:
+# For API only:
+python main.py
+# For Streamlit UI only:
+python run_streamlit.py
+```
+
+5. Test database functionality:
+```bash
+# Parse a log file and store in database
+python test_db.py path/to/poker_log.csv
 ```
 
 ## How to Use
@@ -48,7 +70,17 @@ streamlit run streamlit_app.py
 1. Access the dashboard through a web browser
 2. Upload a PokerNow log file (.csv format)
 3. View the automatically generated analysis
-4. Explore player statistics, win rates, and profit/loss data
+4. Store game data in the database if it's a new game
+5. Explore player statistics, win rates, and profit/loss data
+6. Browse game history and player performance over time
+
+## Tabs
+
+The application now has three main tabs:
+
+1. **Upload Game Log**: Upload and analyze new poker game logs
+2. **Game History**: Browse and view details of previously stored games
+3. **Player Statistics**: View aggregated player statistics across all games
 
 ## Ranking System
 

@@ -6,34 +6,16 @@ source venv/bin/activate
 
 # pip 업데이트
 echo "pip 업데이트 중..."
-pip install --upgrade pip
+pip install --upgrade pip setuptools wheel
 
-# 필요한 패키지 설치
-echo "필요한 패키지 설치 중..."
-# setuptools와 wheel 먼저 설치
-pip install --upgrade setuptools wheel
-
-# Rich 패키지 먼저 설치 (Streamlit과 호환되는 버전으로)
-echo "Rich 패키지 버전 설치 중..."
+# Rich 패키지 호환성 문제 해결
+echo "패키지 호환성 확인 중..."
 pip uninstall -y rich markdown-it-py
-pip install rich==13.3.5 --no-deps
-pip install markdown-it-py==2.2.0
+pip install rich==13.3.5
 
-# requirements.txt의 패키지들 설치 (rich 제외)
+# 필수 패키지 설치
 echo "필수 패키지 설치 중..."
-grep -v "rich==" requirements.txt > temp_requirements.txt
-pip install -r temp_requirements.txt
-rm temp_requirements.txt
-
-# Rich 호환성 최종 확인
-echo "Rich 패키지 호환성 확인 중..."
-RICH_VERSION=$(pip list | grep rich | awk '{print $2}')
-if [ "$RICH_VERSION" != "13.3.5" ]; then
-    echo "Rich 버전 불일치 감지. 올바른 버전으로 강제 설치 중..."
-    pip uninstall -y rich
-    pip install rich==13.3.5 --no-deps
-    pip install markdown-it-py==2.2.0
-fi
+pip install -r requirements.txt
 
 # 백그라운드에서 FastAPI 서버 실행
 echo "FastAPI 서버 시작 중..."

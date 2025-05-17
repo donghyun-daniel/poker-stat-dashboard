@@ -4,18 +4,22 @@
 echo "가상 환경 활성화 중..."
 source venv/bin/activate
 
-# pip 업데이트
-echo "pip 업데이트 중..."
-pip install --upgrade pip setuptools wheel
+echo "Python 3.12.10 환경 사용 중..."
 
-# Rich 패키지 호환성 문제 해결
-echo "패키지 호환성 확인 중..."
-pip uninstall -y rich markdown-it-py
-pip install rich==13.3.5
+# 기본 도구 설치
+echo "기본 패키지 설치 중..."
+pip install --upgrade pip
+pip install uv
+uv pip install setuptools wheel setuptools-distutils
 
 # 필수 패키지 설치
 echo "필수 패키지 설치 중..."
-pip install -r requirements.txt
+uv pip install -r requirements.txt
+
+# Rich 패키지 호환성 문제 해결
+echo "패키지 호환성 확인 중..."
+uv pip uninstall -y rich markdown-it-py
+uv pip install rich==13.3.5
 
 # 백그라운드에서 FastAPI 서버 실행
 echo "FastAPI 서버 시작 중..."

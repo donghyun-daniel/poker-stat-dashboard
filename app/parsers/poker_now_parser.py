@@ -237,13 +237,61 @@ class PokerNowLogParser:
         # For the initial buy-in and rebuys, we need to look at the initial stack and any increases
         initial_stack_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
         
+        # Add patterns for away status and return
+        away_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" stands up'
+        return_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" sits back with the stack of (\d+)'
+        
         total_rebuy = 0
+        rebuy_details = []  # Store detailed history for debugging
+        
+        # Track when player actually participated
+        first_join = True
+        away_status = False
+        
         for entry in self.sorted_game_data:
-            match = re.search(initial_stack_pattern, entry['entry'])
-            if match:
-                amount = int(match.group(1))
-                total_rebuy += amount
-                logger.debug(f"Rebuy for {player_name}: +{amount}")
+            entry_text = entry['entry']
+            timestamp = entry.get('datetime', '?')
+            
+            # Initial join or actual rebuy (new participation in game)
+            join_match = re.search(initial_stack_pattern, entry_text)
+            if join_match:
+                amount = int(join_match.group(1))
+                
+                # Only count as rebuy if it's first join or player is not away
+                if first_join or not away_status:
+                    total_rebuy += amount
+                    rebuy_details.append((timestamp, amount, "New join/rebuy"))
+                    logger.debug(f"Rebuy for {player_name}: +{amount} at {timestamp} (New join)")
+                    first_join = False
+                else:
+                    # Don't count return from away as rebuy
+                    rebuy_details.append((timestamp, amount, "Return from away"))
+                    logger.debug(f"Player {player_name} returned with {amount} at {timestamp} (Not a rebuy)")
+                    away_status = False
+            
+            # Track away status
+            if re.search(away_pattern, entry_text):
+                away_status = True
+                rebuy_details.append((timestamp, 0, "Went away"))
+                logger.debug(f"Player {player_name} went away at {timestamp}")
+            
+            # Track return from away status
+            return_match = re.search(return_pattern, entry_text)
+            if return_match:
+                amount = int(return_match.group(1))
+                away_status = False
+                rebuy_details.append((timestamp, amount, "Sat back"))
+                logger.debug(f"Player {player_name} sat back with {amount} at {timestamp}")
+        
+        # Add detailed logging for specific player (ymk)
+        if player_name == "ymk":
+            logger.info(f"===== DEBUG INFO FOR {player_name} =====")
+            logger.info(f"Total rebuy amount: {total_rebuy}")
+            logger.info(f"Rebuy count based on formula: {(total_rebuy - 20000) / 20000}")
+            logger.info(f"Detailed activity history:")
+            for i, (timestamp, amount, action_type) in enumerate(rebuy_details):
+                logger.info(f"  #{i+1}: {action_type} - {amount} at {timestamp}")
+            logger.info("=====================================")
                 
         return total_rebuy
     

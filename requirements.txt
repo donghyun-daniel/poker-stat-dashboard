@@ -7,5 +7,4 @@ plotly==5.15.0
 numpy==1.24.4
 setuptools>=65.5.0
 wheel>=0.38.0
-rich==13.3.5
-distutils-precedence==0.1.0 
+rich==13.3.5 

@@ -4,9 +4,22 @@
 echo "가상 환경 활성화 중..."
 source venv/bin/activate
 
-# 필요한 패키지 확인
-echo "필요한 패키지 설치 확인 중..."
+# pip 업데이트
+echo "pip 업데이트 중..."
+pip install --upgrade pip
+
+# 필요한 패키지 설치
+echo "필요한 패키지 설치 중..."
+# setuptools와 wheel 먼저 설치
+pip install --upgrade setuptools wheel
+
+# requirements.txt의 패키지들 설치
+echo "필수 패키지 설치 중..."
 pip install -r requirements.txt
+
+# 명시적으로 rich 버전 확인 (Streamlit 호환성 보장)
+echo "Rich 패키지 버전 확인 중..."
+pip install rich==13.3.5
 
 # 백그라운드에서 FastAPI 서버 실행
 echo "FastAPI 서버 시작 중..."

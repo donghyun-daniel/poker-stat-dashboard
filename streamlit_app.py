@@ -200,13 +200,52 @@ def main():
         if not games:
             st.info("No games found in the database. Upload a game log to get started.")
         else:
+            # Create a custom display name for each game with time and players
+            game_options = {}
+            for game in games:
+                # Parse start time with full details including hours, minutes, seconds
+                start_time = pd.to_datetime(game['start_time'])
+                start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Get player info for this game
+                game_details = db.get_game_details(game['game_id'])
+                if game_details and 'players' in game_details:
+                    player_names = [p['user_name'] for p in game_details['players']]
+                    player_names.sort()  # Sort alphabetically
+                    players_str = ", ".join(player_names)
+                    
+                    # Create display name: "2023-05-17 13:45:22 (player1, player2, player3)"
+                    display_name = f"{start_time_str} ({players_str})"
+                    game_options[display_name] = game['game_id']
+            
+            # Let user select a game to view details at the top of the page
+            if game_options:
+                display_names = list(game_options.keys())
+                # Sort by date, newest first
+                display_names.sort(reverse=True)
+                
+                selected_display = st.selectbox("Select a game:", display_names)
+                selected_game_id = game_options[selected_display]
+                
+                # Get game details
+                game_details = db.get_game_details(selected_game_id)
+                
+                if game_details:
+                    # Display game details
+                    display_game_details(game_details)
+                else:
+                    st.warning("Could not retrieve game details.")
+            
+            # Show full game list table below
+            st.subheader("All Games")
+            
             # Create a DataFrame for games
             games_df = pd.DataFrame(games)
             
-            # Format datetime columns
-            games_df['start_time'] = pd.to_datetime(games_df['start_time']).dt.strftime("%Y-%m-%d %H:%M")
-            games_df['end_time'] = pd.to_datetime(games_df['end_time']).dt.strftime("%Y-%m-%d %H:%M")
-            games_df['import_date'] = pd.to_datetime(games_df['import_date']).dt.strftime("%Y-%m-%d %H:%M")
+            # Format datetime columns with full time details
+            games_df['start_time'] = pd.to_datetime(games_df['start_time']).dt.strftime("%Y-%m-%d %H:%M:%S")
+            games_df['end_time'] = pd.to_datetime(games_df['end_time']).dt.strftime("%Y-%m-%d %H:%M:%S")
+            games_df['import_date'] = pd.to_datetime(games_df['import_date']).dt.strftime("%Y-%m-%d %H:%M:%S")
             
             # Rename columns for display
             games_df = games_df.rename(columns={
@@ -221,23 +260,6 @@ def main():
             
             # Display the games table
             st.dataframe(games_df, use_container_width=True)
-            
-            # Game details section
-            st.subheader("Game Details")
-            
-            # Let user select a game to view details
-            game_ids = [g['game_id'] for g in games]
-            selected_game = st.selectbox("Select a game to view details:", game_ids)
-            
-            if selected_game:
-                # Get game details
-                game_details = db.get_game_details(selected_game)
-                
-                if game_details:
-                    # Display game details
-                    display_game_details(game_details)
-                else:
-                    st.warning("Could not retrieve game details.")
     
     # Tab 3: Player Statistics
     with tabs[2]:
@@ -286,6 +308,41 @@ def main():
                 st.bar_chart(win_rate_chart)
     
     st.divider()
+    
+    # Admin area (at the bottom of the page)
+    with st.expander("Administrator Area"):
+        st.write("This is the admin area for database management.")
+        
+        admin_password = st.text_input("Admin Password", type="password")
+        
+        # Get the admin password from secrets or use a default for development
+        correct_password = ""
+        try:
+            correct_password = st.secrets["db_admin_pw"]
+        except (KeyError, FileNotFoundError):
+            # If running locally without secrets file
+            st.warning("⚠️ Admin password not configured in secrets. Authentication will fail.")
+        
+        if admin_password and correct_password and admin_password == correct_password:
+            st.success("Administrator authentication successful!")
+            
+            if st.button("🗑️ Reset Database", help="Warning: All game data will be deleted!"):
+                try:
+                    # Delete table data
+                    db.conn.execute("DELETE FROM game_players")
+                    db.conn.execute("DELETE FROM games")
+                    db.conn.execute("DELETE FROM players")
+                    
+                    # Reset IDs (optional)
+                    db.conn.execute("DELETE FROM sqlite_sequence WHERE name='players'")
+                    
+                    st.success("✅ Database has been successfully reset!")
+                    st.info("Please refresh the page to see the changes.")
+                except Exception as e:
+                    st.error(f"Error occurred while resetting database: {str(e)}")
+        elif admin_password and (not correct_password or admin_password != correct_password):
+            st.error("Incorrect password. Authentication failed.")
+    
     st.caption("Poker Stats Dashboard © 2025")
 
 def store_game_in_db(game_data, log_file_name, db):
@@ -301,9 +358,9 @@ def calculate_prize_distribution(players_df):
     """Calculate the prize distribution based on specified rules."""
     
     # Constants
-    ENTRY_FEE = 4000  # 4,000 won per player
+    ENTRY_FEE = 5000  # 5,000 won per player
     FREE_REBUYS = 2   # First 2 rebuys are free
-    REBUY_FEE = 4000  # 4,000 won for each additional rebuy (3rd and beyond)
+    REBUY_FEE = 5000  # 5,000 won for each additional rebuy (3rd and beyond)
     
     # Get total players
     player_count = len(players_df)
@@ -450,9 +507,9 @@ def display_results(data, show_store_button=False, temp_file_path=None, log_file
     st.caption("* Rebuy Count: Number of times a player was approved by the admin after the initial buy-in")
     
     # Calculate player fee contributions
-    ENTRY_FEE = 4000  # 4,000 won per player
+    ENTRY_FEE = 5000  # 5,000 won per player
     FREE_REBUYS = 2   # First 2 rebuys are free
-    REBUY_FEE = 4000  # 4,000 won for each additional rebuy (3rd and beyond)
+    REBUY_FEE = 5000  # 5,000 won for each additional rebuy (3rd and beyond)
     
     players_df['Entry Fee'] = ENTRY_FEE
     players_df['Additional Fee'] = players_df['Rebuy Count'].apply(
@@ -606,7 +663,7 @@ def display_game_details(game_data):
     # Display game info
     col1, col2, col3 = st.columns(3)
     with col1:
-        st.metric("Game Date", start_time.strftime("%Y-%m-%d"))
+        st.metric("Game Date", start_time.strftime("%Y-%m-%d %H:%M:%S"))
     with col2:
         st.metric("Duration", duration_text)
     with col3:
@@ -638,8 +695,30 @@ def display_game_details(game_data):
     # Calculate rebuy count from total rebuy amount
     players_df['Rebuy Count'] = (players_df['Total Rebuy'] / 20000 - 1).apply(lambda x: max(int(round(x)), 0))
     
+    # Calculate player fee contributions
+    ENTRY_FEE = 5000  # 5,000 won per player
+    FREE_REBUYS = 2   # First 2 rebuys are free
+    REBUY_FEE = 5000  # 5,000 won for each additional rebuy (3rd and beyond)
+    
+    players_df['Entry Fee'] = ENTRY_FEE
+    players_df['Additional Fee'] = players_df['Rebuy Count'].apply(
+        lambda x: max(0, x - FREE_REBUYS) * REBUY_FEE
+    )
+    players_df['Total Fee'] = players_df['Entry Fee'] + players_df['Additional Fee']
+    
+    # Calculate prize distribution
+    prize_distribution, prize_percentages, total_prize_pool = calculate_prize_distribution(players_df)
+    
+    # Add prize info to each player
+    players_df['Prize %'] = players_df['Rank'].map(lambda x: prize_percentages.get(x, 0))
+    players_df['Total Prize'] = players_df['Rank'].map(lambda x: prize_distribution.get(x, 0))
+    players_df['Net Prize'] = players_df['Total Prize'] - players_df['Total Fee']
+    
+    # Format prize percentage as string with 2 decimal places
+    players_df['Prize %'] = players_df['Prize %'].apply(lambda x: f"{x:.2f}%")
+    
     # Format Income with colors
-    def color_income(val):
+    def color_values(val):
         if isinstance(val, (int, float)):
             if val > 0:
                 return 'color: green'
@@ -647,7 +726,7 @@ def display_game_details(game_data):
                 return 'color: red'
         return ''
     
-    # Display player stats
+    # Display player results
     st.subheader("Player Results")
     
     display_cols = ['Rank', 'Player', 'Wins', 'Win Rate (%)', 'Final Chips', 'Rebuy Count', 'Income']
@@ -658,23 +737,41 @@ def display_game_details(game_data):
     # Display the dataframe
     st.dataframe(
         display_df.set_index('Rank').style.applymap(
-            color_income, 
+            color_values, 
             subset=['Income']
         ),
         use_container_width=True,
         height=180
     )
     
-    # Show charts for visual comparison
-    st.subheader("Visual Comparison")
+    # Display prize results
+    st.subheader("Player Prize Results")
     
-    # Income comparison
-    income_chart = players_df[['Player', 'Income']].set_index('Player')
-    st.bar_chart(income_chart)
+    # Add prize pool info
+    st.markdown(f"**Prize Pool: {total_prize_pool:,} won**", unsafe_allow_html=True)
     
-    # Win rate comparison
-    win_rate_chart = players_df[['Player', 'Win Rate (%)']].set_index('Player')
-    st.bar_chart(win_rate_chart)
+    prize_cols = ['Rank', 'Player', 'Prize %', 'Total Fee', 'Total Prize', 'Net Prize']
+    
+    # Make a copy to avoid modifying the original dataframe
+    prize_df = players_df[prize_cols].copy()
+    
+    # Format monetary values with commas
+    prize_df['Total Fee'] = prize_df['Total Fee'].apply(lambda x: f"{x:,} won")
+    prize_df['Total Prize'] = prize_df['Total Prize'].apply(lambda x: f"{x:,} won")
+    prize_df['Net Prize'] = prize_df['Net Prize'].apply(lambda x: f"{x:,} won")
+    
+    # Display prize table
+    st.dataframe(
+        prize_df.set_index('Rank').style.applymap(
+            color_values,
+            subset=['Net Prize']
+        ),
+        use_container_width=True,
+        height=180
+    )
+    
+    st.caption("* Prize % = Percentage of the prize pool")
+    st.caption("* Net Prize = Prize amount minus entry fees")
 
 if __name__ == "__main__":
     main() 

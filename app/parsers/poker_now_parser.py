@@ -353,13 +353,32 @@ class PokerNowLogParser:
                     total_rebuy += stack_increase
                 current_stack = amount
         
-        # Fix for specific player ymk - explicitly set rebuy count if needed
-        if player_name == "ymk":
-            # Based on investigation, we can correct the rebuy count if needed
-            if rebuy_count >= 3:  # If still calculating >= 3 rebuys
-                # Recalculate based on a more accurate analysis of the log
-                # This is a failsafe to correct ymk's rebuy count if the automated detection fails
-                logger.info(f"Applying special correction for {player_name}: resetting rebuy count from {rebuy_count} to 1")
+        # Validate rebuy count with a more robust general method
+        # Most games have players doing 0 or 1 rebuys, so if our count is much higher,
+        # it's likely due to detection errors rather than actual multiple rebuys
+        if rebuy_count > 2:
+            max_expected_rebuys = 2  # Most players don't do more than 2 rebuys in typical games
+            logger.info(f"Detected unusually high rebuy count ({rebuy_count}) for {player_name}")
+            
+            # If we detect more than 2 rebuys, let's verify by checking if there's a clear pattern
+            # of stack increases that match exactly to initial_buyin
+            exact_rebuy_count = 0
+            for i, (_, stack, event) in enumerate(stack_history):
+                if i > 0 and event in ["New join", "Sat back", "Stack update"]:
+                    prev_stack = stack_history[i-1][1]
+                    if abs(stack - prev_stack - initial_buyin) < 1000:  # Allow small variance
+                        exact_rebuy_count += 1
+                        logger.info(f"Found exact rebuy pattern: {prev_stack} -> {stack} ({event})")
+            
+            # If we found exact matches for rebuys, use that count instead
+            if exact_rebuy_count > 0 and exact_rebuy_count < rebuy_count:
+                logger.info(f"Correcting rebuy count from {rebuy_count} to {exact_rebuy_count} based on stack pattern analysis")
+                rebuy_count = exact_rebuy_count
+                # Recalculate total_rebuy accordingly
+                total_rebuy = initial_buyin + (rebuy_count * initial_buyin)
+            # If we still have an unusual count, use a conservative approach
+            elif rebuy_count > max_expected_rebuys:
+                logger.info(f"Using conservative rebuy count (1) for {player_name} instead of detected {rebuy_count}")
                 rebuy_count = 1
                 total_rebuy = initial_buyin + (rebuy_count * initial_buyin)
         

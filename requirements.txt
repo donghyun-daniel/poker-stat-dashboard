@@ -7,4 +7,7 @@ plotly==5.15.0
 numpy==1.24.4
 setuptools>=65.5.0
 wheel>=0.38.0
-rich==13.3.5 
+rich==13.3.5
+markdown-it-py==2.2.0
+pygments==2.15.1
+mdurl==0.1.2 

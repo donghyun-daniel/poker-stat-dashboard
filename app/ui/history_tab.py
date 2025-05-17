@@ -19,53 +19,70 @@ def render_history_tab(db):
     """
     st.write("View and analyze previous games.")
     
-    # Get all games from database
-    all_games = db.get_all_games()
-    
-    # Check if there are games to display
-    if not all_games:
-        st.info("No games found in the database. Please upload a game log first.")
-        return
-    
-    # Create a list of game options with formatted display names
-    game_options = []
-    game_id_map = {}
-    
-    for game in all_games:
-        # Access dictionary values by key instead of index
-        game_id = game['game_id']
-        start_time_str = game['start_time']
-        log_file = game['log_file_name']
+    try:
+        # Get all games from database
+        all_games = db.get_all_games()
         
-        # Get player names for this game
-        player_names = db.get_player_names_for_game(game_id)
-        player_names_str = ", ".join(sorted(player_names))
+        # Check if there are games to display
+        if not all_games:
+            st.info("No games found in the database. Please upload a game log first.")
+            return
         
-        # Format the start time with full time format
-        try:
-            start_time = datetime.strptime(str(start_time_str), "%Y-%m-%d %H:%M:%S")
-            display_time = start_time.strftime(DATE_TIME_FORMAT)
-        except ValueError:
-            display_time = str(start_time_str)
+        # Create a list of game options with formatted display names
+        game_options = []
+        game_id_map = {}
         
-        # Create display name with date, time and player names
-        display_name = f"{display_time} ({player_names_str})"
+        for game in all_games:
+            try:
+                # Try to access dictionary values by key
+                if isinstance(game, dict):
+                    game_id = game['game_id']
+                    start_time_str = game['start_time']
+                    log_file = game['log_file_name']
+                # If it's a tuple or list, access by index
+                elif isinstance(game, (tuple, list)):
+                    game_id = game[0]
+                    start_time_str = game[1]
+                    log_file = game[2]
+                else:
+                    st.error(f"Unexpected game data format: {type(game)}")
+                    continue
+                
+                # Get player names for this game
+                player_names = db.get_player_names_for_game(game_id)
+                player_names_str = ", ".join(sorted(player_names))
+                
+                # Format the start time with full time format
+                try:
+                    start_time = datetime.strptime(str(start_time_str), "%Y-%m-%d %H:%M:%S")
+                    display_time = start_time.strftime(DATE_TIME_FORMAT)
+                except ValueError:
+                    display_time = str(start_time_str)
+                
+                # Create display name with date, time and player names
+                display_name = f"{display_time} ({player_names_str})"
+                
+                game_options.append(display_name)
+                game_id_map[display_name] = game_id
+            except Exception as e:
+                st.error(f"Error processing game data: {str(e)}")
+                continue
         
-        game_options.append(display_name)
-        game_id_map[display_name] = game_id
-    
-    # Add header for game selection
-    st.subheader("Select Game")
-    
-    # Game selection dropdown at the top
-    if game_options:
-        selected_game_display = st.selectbox("Choose a game to view details:", game_options, index=0)
-        selected_game_id = game_id_map[selected_game_display]
+        # Add header for game selection
+        st.subheader("Select Game")
         
-        # Display the selected game details
-        display_game_details(db, selected_game_id)
-    else:
-        st.warning("No games available to display.")
+        # Game selection dropdown at the top
+        if game_options:
+            selected_game_display = st.selectbox("Choose a game to view details:", game_options, index=0)
+            selected_game_id = game_id_map[selected_game_display]
+            
+            # Display the selected game details
+            display_game_details(db, selected_game_id)
+        else:
+            st.warning("No games available to display.")
+    except Exception as e:
+        st.error(f"Error displaying game history: {str(e)}")
+        st.info("Please try uploading a game log first.")
 
 def display_game_details(db, game_id):
     """
@@ -82,8 +99,22 @@ def display_game_details(db, game_id):
             st.error(f"Failed to retrieve information for game ID: {game_id}")
             return
         
-        # Extract game details
-        start_time_str, log_file = game_info
+        # Extract game details with safe handling of different return types
+        try:
+            if isinstance(game_info, (tuple, list)) and len(game_info) >= 2:
+                start_time_str = game_info[0]
+                log_file = game_info[1]
+            elif isinstance(game_info, dict):
+                start_time_str = game_info.get('start_time')
+                log_file = game_info.get('log_file_name')
+            else:
+                st.error(f"Unexpected game info format: {type(game_info)}")
+                start_time_str = "Unknown"
+                log_file = "Unknown"
+        except Exception as e:
+            st.error(f"Error extracting game information: {str(e)}")
+            start_time_str = "Unknown"
+            log_file = "Unknown"
         
         # Format start time with full date and time
         try:
@@ -92,7 +123,7 @@ def display_game_details(db, game_id):
             start_time = datetime.strptime(start_time_str, "%Y-%m-%d %H:%M:%S")
             display_time = start_time.strftime(DATE_TIME_FORMAT)
         except ValueError:
-            display_time = start_time_str
+            display_time = str(start_time_str)
         
         st.divider()
         st.subheader("Game Details")

@@ -42,32 +42,51 @@ def _reset_database(db):
         db: Database manager instance
     """
     try:
+        # Make sure we have a database connection
+        if not db.conn:
+            st.error("No database connection available.")
+            return
+            
         # Delete table data - in the correct order to avoid foreign key issues
-        db.conn.execute("DELETE FROM game_players")
-        db.conn.execute("DELETE FROM games")
-        db.conn.execute("DELETE FROM players")
-        
-        st.success("✅ Database has been successfully reset!")
-        st.info("Please refresh the page to see the changes.")
-    except Exception as e:
-        st.error(f"Error occurred while resetting database: {str(e)}")
-        st.info("Trying to fix the database structure...")
+        st.info("Attempting to delete data from tables...")
         
         try:
-            # Alternative approach - drop and recreate tables
-            # This is safer since DuckDB might have different table structure than SQLite
-            # and doesn't necessarily have sqlite_sequence table
+            # Order matters due to foreign key constraints
+            db.conn.execute("DELETE FROM game_players")
+            db.conn.execute("DELETE FROM games")
+            db.conn.execute("DELETE FROM players")
             
-            # Drop tables in the correct order to avoid foreign key constraints
-            db.conn.execute("DROP TABLE IF EXISTS game_players")
-            db.conn.execute("DROP TABLE IF EXISTS games")
-            db.conn.execute("DROP TABLE IF EXISTS players")
-            
-            # Reinitialize the database
-            db.initialize_db_tables()
-            
-            st.success("✅ Database has been successfully reset and rebuilt!")
+            st.success("✅ Database has been successfully reset!")
             st.info("Please refresh the page to see the changes.")
-        except Exception as e2:
-            st.error(f"Failed to rebuild database: {str(e2)}")
-            st.info("You may need to manually delete the database file and restart the application.") 
+        except Exception as e:
+            st.warning(f"Could not delete data: {str(e)}")
+            st.info("Trying alternative approach - dropping and recreating tables...")
+            
+            try:
+                # Drop tables in the correct order to avoid foreign key constraints
+                db.conn.execute("DROP TABLE IF EXISTS game_players")
+                db.conn.execute("DROP TABLE IF EXISTS games")
+                db.conn.execute("DROP TABLE IF EXISTS players")
+                
+                # Reinitialize the database tables
+                try:
+                    # Try with the more specific method if available
+                    db.initialize_db_tables()
+                except AttributeError:
+                    # Fall back to the general method
+                    db.initialize_db()
+                
+                st.success("✅ Database has been successfully reset and rebuilt!")
+                st.info("Please refresh the page to see the changes.")
+            except Exception as e2:
+                st.error(f"Failed to rebuild database: {str(e2)}")
+                st.info("You may need to manually delete the database file and restart the application.")
+                st.code("""
+                # To manually reset the database:
+                1. Stop the application
+                2. Delete the 'poker_stats.duckdb' and any '.wal' files in the data directory
+                3. Restart the application
+                """)
+    except Exception as e:
+        st.error(f"Unexpected error during database reset: {str(e)}")
+        st.info("Please try restarting the application.") 

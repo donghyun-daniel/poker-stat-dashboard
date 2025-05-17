@@ -36,10 +36,44 @@ def render_stats_tab(db):
         return
     
     try:
-        # Create DataFrame from player stats (all_stats는 튜플 리스트)
+        # Create DataFrame from player stats (all_stats is a list of tuples)
         columns = ["Player", "Game Count", "Total Fee", "Total Prize", "Net Income", 
                 "Total Wins", "Total Hands", "Win Rate", "Avg Rank", "Best Rank"]
-        df = pd.DataFrame(all_stats, columns=columns)
+        
+        try:
+            # Handle different return formats gracefully
+            df = pd.DataFrame(all_stats, columns=columns)
+        except Exception as e:
+            st.error(f"Error processing player data: {str(e)}")
+            # If columns don't match, try a more flexible approach
+            st.info("Attempting to recover from data format error...")
+            
+            # If all_stats is a list of dictionaries, try to extract values
+            if all_stats and isinstance(all_stats[0], dict):
+                try:
+                    # Extract values in the expected order if possible
+                    processed_data = []
+                    for stat in all_stats:
+                        row = [
+                            stat.get('player_name', ''),
+                            stat.get('games_played', 0),
+                            stat.get('total_fee', 0),
+                            stat.get('total_prize', 0),
+                            stat.get('net_income', 0),
+                            stat.get('total_wins', 0),
+                            stat.get('total_hands', 0),
+                            stat.get('win_rate', 0),
+                            stat.get('avg_rank', 0),
+                            stat.get('best_rank', 0)
+                        ]
+                        processed_data.append(row)
+                    df = pd.DataFrame(processed_data, columns=columns)
+                except Exception as e2:
+                    st.error(f"Failed to recover from data format error: {str(e2)}")
+                    return
+            else:
+                st.error("Unable to process player statistics. Data format is not compatible.")
+                return
         
         # Sort by net income (descending)
         df = df.sort_values("Net Income", ascending=False)

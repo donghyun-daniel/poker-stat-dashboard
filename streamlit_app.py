@@ -281,13 +281,14 @@ def display_results(data):
     })
     
     # Calculate rebuy count based on the total rebuy amount from parser
-    # The parser now detects when a player's stack becomes 0 and then they rejoin with 20,000
+    # The parser now simply counts the number of times a player joined the game
+    # The first join is the initial buy-in, all subsequent joins are rebuys
     # The total_rebuy_amt from parser is initial_buyin * (1 + rebuy_count)
     # So rebuy count = (total_rebuy_amt / initial_buyin) - 1
     players_df['Rebuy Count'] = (players_df['Rebuy-in Count'] / 20000 - 1).apply(lambda x: max(int(round(x)), 0))
     
     # Add a note about the rebuy count meaning
-    st.caption("* Rebuy Count: Number of times a player lost all chips (0) and rejoined with a new 20,000 buy-in")
+    st.caption("* Rebuy Count: Number of times a player rejoined the game after the initial buy-in")
     
     # 각 플레이어별 참가 금액 계산 (기본 ENTRY_FEE + 추가 리바이인)
     ENTRY_FEE = 4000  # 4,000 won per player
@@ -369,7 +370,7 @@ def display_results(data):
     )
     
     st.caption("* Win Rate (%) = (Wins / Hands) × 100")
-    st.caption("* Rebuy Count = Number of times a player lost all chips (0) and rejoined with a new 20,000 buy-in")
+    st.caption("* Rebuy Count = Number of times a player rejoined the game after the initial buy-in")
     
     # Add new Player Prize Statistics section
     st.divider()

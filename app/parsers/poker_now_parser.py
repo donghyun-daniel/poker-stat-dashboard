@@ -235,98 +235,57 @@ class PokerNowLogParser:
     def _calculate_rebuy_amount(self, player_name: str) -> int:
         """
         Calculate the total rebuy amount for a player.
-        A rebuy occurs ONLY when a player's stack becomes 0 and then they rejoin with 20,000.
+        A rebuy is counted simply by looking at "joined the game with a stack" occurrences.
+        The first join is the initial buy-in, all subsequent joins are rebuys.
         """
-        # Define the patterns to match
-        initial_join_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
-        stack_update_pattern = rf'"{re.escape(player_name)} @ [^"]+" \((\d+)\)'
-        away_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" stands up'
-        return_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" sits back with the stack of (\d+)'
+        # Define the pattern to match
+        join_pattern = rf'The player "{re.escape(player_name)} @ [^"]+" joined the game with a stack of (\d+)'
         
-        # Keep track of player's state
-        first_join = True
+        # Track joins and rebuys
         initial_buyin = 20000  # Default initial buy-in amount
-        current_stack = 0
-        away_status = False
+        join_events = []
         
-        # Track all stack updates to find 0-to-20000 patterns
-        stack_history = []
-        rebuy_count = 0
-        
-        # Process log entries chronologically
+        # Process log entries chronologically to find all joins
         for entry in self.sorted_game_data:
             entry_text = entry['entry']
             timestamp = entry.get('datetime', datetime.min)
             
-            # Check for initial join or rejoin
-            join_match = re.search(initial_join_pattern, entry_text)
+            # Look for player joining the game
+            join_match = re.search(join_pattern, entry_text)
             if join_match:
                 amount = int(join_match.group(1))
-                
-                if first_join:
-                    # First join sets the initial buy-in
-                    initial_buyin = amount
-                    current_stack = amount
-                    stack_history.append((timestamp, current_stack, "Initial join"))
-                    first_join = False
-                    logger.debug(f"Initial buy-in for {player_name}: {amount} at {timestamp}")
-                else:
-                    # If current stack is 0 and player rejoins with initial buy-in amount,
-                    # this is a rebuy (player lost all chips and is buying back in)
-                    if current_stack == 0 and not away_status:
-                        rebuy_count += 1
-                        logger.info(f"REBUY detected for {player_name}: Lost all chips and rejoined with {amount} at {timestamp}")
-                    
-                    current_stack = amount
-                    stack_history.append((timestamp, current_stack, "Rejoin"))
-            
-            # Track player going away
-            if re.search(away_pattern, entry_text):
-                away_status = True
-                stack_history.append((timestamp, current_stack, "Away"))
-            
-            # Track player returning
-            return_match = re.search(return_pattern, entry_text)
-            if return_match:
-                amount = int(return_match.group(1))
-                
-                # If player had 0 chips, went away, and returned with initial buy-in,
-                # this could be a rebuy
-                if current_stack == 0 and amount == initial_buyin:
-                    rebuy_count += 1
-                    logger.info(f"REBUY detected for {player_name}: Return from away with new buy-in {amount} at {timestamp}")
-                
-                current_stack = amount
-                away_status = False
-                stack_history.append((timestamp, current_stack, "Return"))
-            
-            # Track stack updates in "Player stacks:" entries
-            if "Player stacks:" in entry_text:
-                stack_match = re.search(stack_update_pattern, entry_text)
-                if stack_match:
-                    new_stack = int(stack_match.group(1))
-                    
-                    # Track stack becoming 0 - this indicates player may be about to rebuy
-                    if new_stack == 0 and current_stack > 0:
-                        logger.info(f"Player {player_name} stack went to zero at {timestamp}")
-                    
-                    current_stack = new_stack
-                    stack_history.append((timestamp, current_stack, "Stack update"))
+                join_events.append((timestamp, amount))
+                logger.debug(f"Join event for {player_name}: {amount} at {timestamp}")
         
-        # Calculate total rebuy amount
-        # Initial buy-in + (number of rebuys * initial buy-in)
+        # The first join is the initial buy-in
+        if join_events:
+            initial_buyin = join_events[0][1]
+            logger.info(f"Initial buy-in for {player_name}: {initial_buyin}")
+            
+            # Count all subsequent joins as rebuys
+            rebuy_count = max(0, len(join_events) - 1)
+            logger.info(f"Detected {rebuy_count} rebuys for {player_name}")
+        else:
+            # No join events found, which should not happen
+            rebuy_count = 0
+            logger.warning(f"No join events found for {player_name}")
+        
+        # Calculate total rebuy amount (initial buy-in + rebuys)
         total_rebuy_amount = initial_buyin * (1 + rebuy_count)
         
         # Add detailed logging for debugging
         logger.info(f"===== DEBUG INFO FOR {player_name} =====")
         logger.info(f"Initial buy-in: {initial_buyin}")
-        logger.info(f"Detected rebuy count from 0->20000 pattern: {rebuy_count}")
+        logger.info(f"Join events: {len(join_events)}")
+        logger.info(f"Rebuy count: {rebuy_count}")
         logger.info(f"Total rebuy amount: {total_rebuy_amount}")
-        logger.info(f"Final stack: {current_stack}")
-                
-        logger.info(f"Stack history:")
-        for i, (time, stack, event) in enumerate(stack_history):
-            logger.info(f"  #{i+1}: {event} - {stack} at {time}")
+        
+        if join_events:
+            logger.info("Join history:")
+            for i, (time, amount) in enumerate(join_events):
+                event_type = "Initial buy-in" if i == 0 else f"Rebuy #{i}"
+                logger.info(f"  {event_type}: {amount} at {time}")
+        
         logger.info("=====================================")
         
         return total_rebuy_amount

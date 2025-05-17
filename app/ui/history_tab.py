@@ -200,7 +200,7 @@ def display_game_details(db, game_id):
         
         # Display DataFrame - using Rank as index
         st.dataframe(
-            player_df[display_cols].set_index("Rank").style.applymap(
+            player_df[display_cols].set_index("Rank").style.map(
                 color_values, 
                 subset=["Income"]
             ),
@@ -227,7 +227,10 @@ def display_game_details(db, game_id):
         
         # Display prize DataFrame
         st.dataframe(
-            display_prize_df.set_index("Rank"),
+            display_prize_df.set_index("Rank").style.map(
+                color_values,
+                subset=["Net Prize"]
+            ),
             use_container_width=True,
             height=min(180, len(display_prize_df) * 35 + 38)
         )

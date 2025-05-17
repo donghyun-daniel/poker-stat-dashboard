@@ -75,8 +75,11 @@ def render_stats_tab(db):
                 st.error("Unable to process player statistics. Data format is not compatible.")
                 return
         
-        # Sort by net income (descending)
-        df = df.sort_values("Net Income", ascending=False)
+        # Sort by average rank (ascending) since lower rank is better
+        df = df.sort_values("Avg Rank")
+        
+        # Add overall ranking based on average rank
+        df["Rank"] = range(1, len(df) + 1)
         
         # Display player performance section
         st.subheader("Player Performance Summary")
@@ -102,16 +105,16 @@ def render_stats_tab(db):
             return ""
         
         # Select display columns and rename them for better readability
-        display_cols = ["Player", "Game Count", "Total Fee Display", "Total Prize Display", 
+        display_cols = ["Rank", "Player", "Game Count", "Total Fee Display", "Total Prize Display", 
                         "Net Income Display", "Win Rate Display", "Avg Rank Display", "Best Rank"]
         
         display_df = df[display_cols].copy()
-        display_df.columns = ["Player", "Games", "Total Fee", "Total Prize", 
+        display_df.columns = ["Rank", "Player", "Games", "Total Fee", "Total Prize", 
                             "Net Income", "Win Rate (%)", "Avg Rank", "Best Rank"]
         
-        # Display player summary table
+        # Display player summary table with Rank as index
         st.dataframe(
-            display_df.style.applymap(
+            display_df.set_index("Rank").style.map(
                 color_values, 
                 subset=["Net Income"]
             ),
@@ -120,6 +123,7 @@ def render_stats_tab(db):
         )
         
         # Add explanations
+        st.caption("* Rank is based on average ranking across all games (lower is better)")
         st.caption("* Net Income = Total Prize - Total Fee")
         st.caption("* Win Rate (%) = (Total Wins / Total Hands) × 100")
         st.caption("* Avg Rank = Average finishing position across all games")

@@ -185,65 +185,166 @@ class PokerDBManager:
         Returns:
             The game_id if successful, None otherwise
         """
+        if not self.conn:
+            logger.error("Cannot store game data: No database connection")
+            return None
+            
         try:
+            # Check for required fields in game_data
+            if 'game_period' not in game_data:
+                logger.error("Missing 'game_period' in game data")
+                return None
+                
+            if 'players' not in game_data:
+                logger.error("Missing 'players' in game data")
+                return None
+                
             # Extract game information
-            start_time = game_data['game_period']['start']
-            end_time = game_data['game_period']['end']
-            total_hands = game_data['total_hands']
+            try:
+                start_time = game_data['game_period']['start']
+                end_time = game_data['game_period']['end']
+                total_hands = game_data.get('total_hands', 0)  # Default to 0 if not present
+            except KeyError as e:
+                logger.error(f"Missing required field in game data: {str(e)}")
+                return None
             
             # Extract player names
-            player_names = [player['user_name'] for player in game_data['players']]
-            player_count = len(player_names)
+            try:
+                player_names = [player['user_name'] for player in game_data['players']]
+                player_count = len(player_names)
+                
+                if player_count == 0:
+                    logger.error("No players found in game data")
+                    return None
+            except (KeyError, TypeError) as e:
+                logger.error(f"Error extracting player names: {str(e)}")
+                return None
             
             # Check if this game already exists
             if self.game_exists(start_time, player_names):
                 logger.info("This game's information is already pushed to the database")
                 return None
             
-            # Generate a unique game ID (using timestamp + hash of player names)
-            game_id = f"game_{start_time.strftime('%Y%m%d%H%M%S')}_{hash(tuple(sorted(player_names))) % 10000:04d}"
-            
-            # Insert game record
-            self.conn.execute(f"""
-                INSERT INTO games (game_id, log_file_name, start_time, end_time, total_hands, player_count)
-                VALUES ('{game_id}', '{log_file_name}', '{start_time}', '{end_time}', {total_hands}, {player_count})
-            """)
-            
-            # Process each player's data
-            for player_data in game_data['players']:
-                player_name = player_data['user_name']
+            # Generate a unique game ID
+            try:
+                # First attempt: using timestamp + hash of player names
+                timestamp_str = start_time.strftime('%Y%m%d%H%M%S')
+                player_hash = hash(tuple(sorted(player_names))) % 10000
+                game_id = f"game_{timestamp_str}_{player_hash:04d}"
                 
-                # Check if player exists, if not, create
-                player_id = self._get_or_create_player(player_name)
+                # Check if this ID already exists
+                id_exists = self.conn.execute(f"SELECT 1 FROM games WHERE game_id = '{game_id}' LIMIT 1").fetchone()
                 
-                # Insert player game stats
+                # If ID exists, try different approach
+                if id_exists:
+                    logger.warning(f"Game ID {game_id} already exists in database, generating alternative ID")
+                    
+                    # Second attempt: Add a random component
+                    import random
+                    import uuid
+                    
+                    # Use timestamp + random UUID suffix (first 8 chars)
+                    random_suffix = str(uuid.uuid4())[:8]
+                    game_id = f"game_{timestamp_str}_{random_suffix}"
+                    
+                    # Double check this ID doesn't exist (very unlikely but just in case)
+                    id_exists = self.conn.execute(f"SELECT 1 FROM games WHERE game_id = '{game_id}' LIMIT 1").fetchone()
+                    
+                    if id_exists:
+                        # Third (final) attempt: full UUID
+                        game_id = f"game_{uuid.uuid4()}"
+                        logger.warning(f"Using UUID-based game ID: {game_id}")
+            except Exception as e:
+                logger.error(f"Error generating unique game ID: {str(e)}")
+                # Fallback to a simple UUID-based ID
+                import uuid
+                game_id = f"game_{uuid.uuid4()}"
+            
+            logger.info(f"Using game ID: {game_id}")
+            
+            # Start transaction
+            self.conn.execute("BEGIN TRANSACTION")
+            
+            try:
+                # Insert game record
                 self.conn.execute(f"""
-                    INSERT INTO game_players (
-                        game_id, 
-                        player_id, 
-                        rank, 
-                        total_rebuy_amt, 
-                        total_win_cnt, 
-                        total_hand_cnt, 
-                        total_chip, 
-                        total_income
-                    ) VALUES (
-                        '{game_id}', 
-                        {player_id}, 
-                        {player_data['rank']}, 
-                        {player_data['total_rebuy_amt']}, 
-                        {player_data['total_win_cnt']}, 
-                        {player_data['total_hand_cnt']}, 
-                        {player_data['total_chip']}, 
-                        {player_data['total_income']}
-                    )
+                    INSERT INTO games (game_id, log_file_name, start_time, end_time, total_hands, player_count)
+                    VALUES ('{game_id}', '{log_file_name}', '{start_time}', '{end_time}', {total_hands}, {player_count})
                 """)
+                
+                # Process each player's data
+                for player_data in game_data['players']:
+                    try:
+                        player_name = player_data['user_name']
+                        
+                        # Validate required player fields
+                        required_fields = ['rank', 'total_rebuy_amt', 'total_win_cnt', 
+                                        'total_hand_cnt', 'total_chip', 'total_income']
+                        
+                        for field in required_fields:
+                            if field not in player_data:
+                                logger.error(f"Missing required field '{field}' for player '{player_name}'")
+                                raise KeyError(f"Missing field '{field}' for player '{player_name}'")
+                        
+                        # Check if player exists, if not, create
+                        player_id = self._get_or_create_player(player_name)
+                        
+                        # Insert player game stats
+                        self.conn.execute(f"""
+                            INSERT INTO game_players (
+                                game_id, 
+                                player_id, 
+                                rank, 
+                                total_rebuy_amt, 
+                                total_win_cnt, 
+                                total_hand_cnt, 
+                                total_chip, 
+                                total_income
+                            ) VALUES (
+                                '{game_id}', 
+                                {player_id}, 
+                                {player_data['rank']}, 
+                                {player_data['total_rebuy_amt']}, 
+                                {player_data['total_win_cnt']}, 
+                                {player_data['total_hand_cnt']}, 
+                                {player_data['total_chip']}, 
+                                {player_data['total_income']}
+                            )
+                        """)
+                    except KeyError as e:
+                        # Roll back transaction and return error
+                        self.conn.execute("ROLLBACK")
+                        logger.error(f"KeyError while processing player data: {str(e)}")
+                        return None
+                    except Exception as e:
+                        # Roll back transaction and return error
+                        self.conn.execute("ROLLBACK")
+                        logger.error(f"Error processing player data for '{player_name}': {str(e)}")
+                        return None
+                
+                # Commit transaction
+                self.conn.execute("COMMIT")
+                
+                logger.info(f"Game data stored successfully with game_id: {game_id}")
+                return game_id
+                
+            except Exception as e:
+                # Roll back transaction in case of error
+                self.conn.execute("ROLLBACK")
+                logger.error(f"Database error while storing game data: {str(e)}")
+                return None
             
-            logger.info(f"Game data stored successfully with game_id: {game_id}")
-            return game_id
-            
+        except KeyError as e:
+            logger.error(f"Missing key in game data: {str(e)}")
+            return None
+        except TypeError as e:
+            logger.error(f"Type error in game data: {str(e)}")
+            return None
+        except ValueError as e:
+            logger.error(f"Value error in game data: {str(e)}")
+            return None
         except Exception as e:
-            logger.error(f"Error storing game data: {str(e)}")
+            logger.error(f"Unexpected error storing game data: {str(e)}")
             return None
     
     def _get_or_create_player(self, player_name: str) -> int:

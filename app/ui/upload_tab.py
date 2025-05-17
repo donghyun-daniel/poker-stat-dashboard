@@ -198,7 +198,7 @@ def display_results(data, show_store_button=False, temp_file_path=None, log_file
     
     # Display DataFrame - without index
     st.dataframe(
-        players_df[display_cols].set_index('Rank').style.applymap(
+        players_df[display_cols].set_index('Rank').style.map(
             color_values, 
             subset=['Income']
         ),
@@ -231,7 +231,7 @@ def display_results(data, show_store_button=False, temp_file_path=None, log_file
     
     # Display prize statistics
     st.dataframe(
-        display_prize_df.set_index('Rank').style.applymap(
+        display_prize_df.set_index('Rank').style.map(
             color_values,
             subset=['Net Prize']
         ),
@@ -245,12 +245,59 @@ def display_results(data, show_store_button=False, temp_file_path=None, log_file
     # Add button to store game data in database if requested
     if show_store_button and db and log_file_name:
         st.divider()
-        if st.button("Store Game Data in Database"):
-            success, message = store_game_in_db(data, log_file_name, db)
-            if success:
-                st.success(message)
-            else:
-                st.error(message)
+        
+        col1, col2 = st.columns([3, 1])
+        with col1:
+            st.write("📊 Store this game in the database to track statistics over time.")
+        
+        with col2:
+            if st.button("💾 Store Game Data", help="Save this game data to the database for future reference and statistics"):
+                with st.spinner("Storing game data..."):
+                    success, message = store_game_in_db(data, log_file_name, db)
+                    
+                    if success:
+                        st.success(message)
+                        st.balloons()  # Add a fun element for successful storage
+                        
+                        # Show next steps
+                        st.info("You can now view this game in the Game History and Player Statistics tabs.")
+                    else:
+                        # Parse the error message to provide more helpful information
+                        error_type = "database error"
+                        if "already exists" in message.lower():
+                            error_type = "duplicate game"
+                            st.error(message)
+                            st.info("This game is already stored in the database. You can view it in the Game History tab.")
+                        elif "missing" in message.lower():
+                            error_type = "missing data"
+                            st.error(message)
+                            st.info("The game data is missing some required information. Please check the log file.")
+                        elif "type error" in message.lower():
+                            error_type = "data format"
+                            st.error(message)
+                            st.info("There's an issue with the data format. Please check the log file.")
+                        else:
+                            # Generic error
+                            st.error(message)
+                            
+                        # Log for debugging
+                        st.error(f"Error type: {error_type}")
+                        
+                        # Add a expandable section with troubleshooting tips
+                        with st.expander("Troubleshooting Tips"):
+                            st.markdown("""
+                            ### Common Issues and Solutions:
+                            
+                            1. **Duplicate Game**: The game is already in the database. You can view it in the Game History tab.
+                            
+                            2. **Missing Data**: The log file may be incomplete or corrupted. Try re-downloading the log file from PokerNow.
+                            
+                            3. **Database Connection**: The database connection might be temporarily unavailable. Try refreshing the page.
+                            
+                            4. **Data Format**: There might be an issue with the log file format. Ensure it's a valid PokerNow log file.
+                            
+                            If you continue to experience issues, please check the application logs or contact support.
+                            """)
 
 def store_game_in_db(game_data, log_file_name, db):
     """
@@ -264,9 +311,31 @@ def store_game_in_db(game_data, log_file_name, db):
     Returns:
         tuple: (success, message)
     """
-    game_id = db.store_game_data(game_data, log_file_name)
-    
-    if game_id:
-        return True, f"Game data successfully stored in the database with ID: {game_id}"
-    else:
-        return False, "Failed to store game data in the database" 
+    try:
+        # First check if this game already exists
+        start_time = game_data['game_period']['start']
+        player_names = [player['user_name'] for player in game_data['players']]
+        
+        if db.game_exists(start_time, player_names):
+            return False, "Failed to store game data: This game already exists in the database"
+            
+        # Try to store the game data
+        game_id = db.store_game_data(game_data, log_file_name)
+        
+        if game_id:
+            return True, f"Game data successfully stored in the database with ID: {game_id}"
+        else:
+            return False, "Failed to store game data: Unknown database error occurred"
+            
+    except KeyError as e:
+        # Handle missing required fields in game data
+        return False, f"Failed to store game data: Missing required field in game data ({str(e)})"
+    except TypeError as e:
+        # Handle type errors (e.g., wrong data type for a field)
+        return False, f"Failed to store game data: Type error ({str(e)})"
+    except ValueError as e:
+        # Handle value errors (e.g., invalid values)
+        return False, f"Failed to store game data: Invalid value ({str(e)})"
+    except Exception as e:
+        # Handle any other exceptions
+        return False, f"Failed to store game data: {str(e)}" 

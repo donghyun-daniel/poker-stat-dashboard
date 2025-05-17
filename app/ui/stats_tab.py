@@ -75,10 +75,10 @@ def render_stats_tab(db):
                 st.error("Unable to process player statistics. Data format is not compatible.")
                 return
         
-        # Sort by average rank (ascending) since lower rank is better
-        df = df.sort_values("Avg Rank")
+        # Database query already sorts by avg_rank (ascending)
+        # No need to re-sort here
         
-        # Add overall ranking based on average rank
+        # Add overall ranking based on the current order (already sorted by avg_rank from DB)
         df["Rank"] = range(1, len(df) + 1)
         
         # Display player performance section

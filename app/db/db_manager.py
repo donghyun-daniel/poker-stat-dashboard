@@ -132,31 +132,40 @@ class PokerDBManager:
             return False
             
         try:
-            # Format datetime for SQL
+            # Format datetime for SQL (safely)
             start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
             
-            # First check if we have a game with the same start time
-            result = self.conn.execute(f"""
-                SELECT game_id, player_count 
-                FROM games 
-                WHERE start_time = '{start_time_str}'
-            """).fetchall()
+            logger.info(f"Checking for existing game at {start_time_str} with {len(player_names)} players")
+            logger.info(f"Players: {', '.join(sorted(player_names))}")
+            
+            # Use parameterized query to prevent SQL injection
+            result = self.conn.execute(
+                "SELECT game_id, player_count FROM games WHERE start_time = ?",
+                (start_time_str,)
+            ).fetchall()
             
             if not result:
+                logger.info("No games found with matching start time")
                 return False
+            
+            logger.info(f"Found {len(result)} games with same start time")
             
             # For each potential matching game, check if the players match
             for game_id, player_count in result:
                 if player_count != len(player_names):
+                    logger.info(f"Game {game_id} has different player count ({player_count} vs {len(player_names)})")
                     continue
                 
-                # Get players for this game
-                players_result = self.conn.execute(f"""
+                # Get players for this game with parameterized query
+                players_result = self.conn.execute(
+                    """
                     SELECT p.player_name
                     FROM game_players gp
                     JOIN players p ON gp.player_id = p.player_id
-                    WHERE gp.game_id = '{game_id}'
-                """).fetchall()
+                    WHERE gp.game_id = ?
+                    """,
+                    (game_id,)
+                ).fetchall()
                 
                 db_players = [p[0] for p in players_result]
                 
@@ -166,8 +175,14 @@ class PokerDBManager:
                 
                 if db_players == sorted_players:
                     logger.info(f"Found matching game in database: {game_id}")
+                    logger.info(f"Matching players: {', '.join(db_players)}")
                     return True
+                else:
+                    logger.info(f"Game {game_id} has different players")
+                    logger.info(f"DB players: {', '.join(db_players)}")
+                    logger.info(f"Current players: {', '.join(sorted_players)}")
             
+            logger.info("No matching game found after player comparison")
             return False
             
         except Exception as e:
@@ -220,9 +235,10 @@ class PokerDBManager:
                 logger.error(f"Error extracting player names: {str(e)}")
                 return None
             
-            # Check if this game already exists
+            # Check if this game already exists with more detailed logging
             if self.game_exists(start_time, player_names):
-                logger.info("This game's information is already pushed to the database")
+                logger.warning("This game's information is already in the database - skipping storage")
+                logger.info(f"Duplicate game details: Start time={start_time}, Players={', '.join(sorted(player_names))}")
                 return None
             
             # Generate a unique game ID
@@ -232,33 +248,56 @@ class PokerDBManager:
                 player_hash = hash(tuple(sorted(player_names))) % 10000
                 game_id = f"game_{timestamp_str}_{player_hash:04d}"
                 
-                # Check if this ID already exists
-                id_exists = self.conn.execute(f"SELECT 1 FROM games WHERE game_id = '{game_id}' LIMIT 1").fetchone()
+                # Better check if this ID already exists - use parameterized query for safety
+                id_exists = self.conn.execute(
+                    "SELECT 1 FROM games WHERE game_id = ? LIMIT 1", 
+                    (game_id,)
+                ).fetchone()
                 
                 # If ID exists, try different approach
                 if id_exists:
                     logger.warning(f"Game ID {game_id} already exists in database, generating alternative ID")
                     
-                    # Second attempt: Add a random component
-                    import random
+                    # Import here to avoid circular imports
                     import uuid
+                    import random
                     
-                    # Use timestamp + random UUID suffix (first 8 chars)
+                    # Second attempt: Use timestamp + random UUID suffix 
                     random_suffix = str(uuid.uuid4())[:8]
                     game_id = f"game_{timestamp_str}_{random_suffix}"
                     
-                    # Double check this ID doesn't exist (very unlikely but just in case)
-                    id_exists = self.conn.execute(f"SELECT 1 FROM games WHERE game_id = '{game_id}' LIMIT 1").fetchone()
+                    # Double check this ID doesn't exist
+                    id_exists = self.conn.execute(
+                        "SELECT 1 FROM games WHERE game_id = ? LIMIT 1", 
+                        (game_id,)
+                    ).fetchone()
                     
                     if id_exists:
                         # Third (final) attempt: full UUID
-                        game_id = f"game_{uuid.uuid4()}"
+                        game_id = f"game_{str(uuid.uuid4())}"
                         logger.warning(f"Using UUID-based game ID: {game_id}")
+                        
+                        # Final safety check
+                        id_exists = self.conn.execute(
+                            "SELECT 1 FROM games WHERE game_id = ? LIMIT 1", 
+                            (game_id,)
+                        ).fetchone()
+                        
+                        if id_exists:
+                            # This is extremely unlikely but handle it anyway
+                            logger.error("All attempts to generate a unique game ID failed")
+                            raise ValueError("Unable to generate a unique game ID after multiple attempts")
             except Exception as e:
                 logger.error(f"Error generating unique game ID: {str(e)}")
-                # Fallback to a simple UUID-based ID
+                # Fallback to a simple UUID-based ID with additional random component
                 import uuid
-                game_id = f"game_{uuid.uuid4()}"
+                import random
+                import time
+                
+                # Add timestamp and random number to make it even more unique
+                unique_component = f"{int(time.time())}_{random.randint(1000, 9999)}"
+                game_id = f"game_{unique_component}_{uuid.uuid4()}"
+                logger.warning(f"Using failsafe game ID generation method: {game_id}")
             
             logger.info(f"Using game ID: {game_id}")
             
@@ -266,11 +305,19 @@ class PokerDBManager:
             self.conn.execute("BEGIN TRANSACTION")
             
             try:
-                # Insert game record
-                self.conn.execute(f"""
-                    INSERT INTO games (game_id, log_file_name, start_time, end_time, total_hands, player_count)
-                    VALUES ('{game_id}', '{log_file_name}', '{start_time}', '{end_time}', {total_hands}, {player_count})
-                """)
+                # Format datetime for SQL
+                start_time_str = start_time.strftime("%Y-%m-%d %H:%M:%S")
+                end_time_str = end_time.strftime("%Y-%m-%d %H:%M:%S")
+                
+                # Insert game record with parameterized query
+                self.conn.execute(
+                    """
+                    INSERT INTO games 
+                    (game_id, log_file_name, start_time, end_time, total_hands, player_count)
+                    VALUES (?, ?, ?, ?, ?, ?)
+                    """,
+                    (game_id, log_file_name, start_time_str, end_time_str, total_hands, player_count)
+                )
                 
                 # Process each player's data
                 for player_data in game_data['players']:
@@ -289,28 +336,18 @@ class PokerDBManager:
                         # Check if player exists, if not, create
                         player_id = self._get_or_create_player(player_name)
                         
-                        # Insert player game stats
-                        self.conn.execute(f"""
-                            INSERT INTO game_players (
-                                game_id, 
-                                player_id, 
-                                rank, 
-                                total_rebuy_amt, 
-                                total_win_cnt, 
-                                total_hand_cnt, 
-                                total_chip, 
-                                total_income
-                            ) VALUES (
-                                '{game_id}', 
-                                {player_id}, 
-                                {player_data['rank']}, 
-                                {player_data['total_rebuy_amt']}, 
-                                {player_data['total_win_cnt']}, 
-                                {player_data['total_hand_cnt']}, 
-                                {player_data['total_chip']}, 
-                                {player_data['total_income']}
-                            )
-                        """)
+                        # Insert player game stats with parameterized query
+                        self.conn.execute(
+                            """
+                            INSERT INTO game_players 
+                            (game_id, player_id, rank, total_rebuy_amt, total_win_cnt, 
+                            total_hand_cnt, total_chip, total_income)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (game_id, player_id, player_data['rank'], player_data['total_rebuy_amt'],
+                            player_data['total_win_cnt'], player_data['total_hand_cnt'],
+                            player_data['total_chip'], player_data['total_income'])
+                        )
                     except KeyError as e:
                         # Roll back transaction and return error
                         self.conn.execute("ROLLBACK")
@@ -357,30 +394,38 @@ class PokerDBManager:
         Returns:
             The player's ID
         """
-        # First try to get the player
-        result = self.conn.execute(f"""
-            SELECT player_id FROM players WHERE player_name = '{player_name}'
-        """).fetchone()
-        
-        if result:
-            return result[0]
-        
-        # Player doesn't exist, create new player
-        # Get the next player_id (max + 1)
-        result = self.conn.execute("""
-            SELECT COALESCE(MAX(player_id), 0) + 1 FROM players
-        """).fetchone()
-        
-        next_player_id = result[0]
-        
-        # Insert the new player
-        self.conn.execute(f"""
-            INSERT INTO players (player_id, player_name)
-            VALUES ({next_player_id}, '{player_name}')
-        """)
-        
-        logger.info(f"Created new player: {player_name} with ID: {next_player_id}")
-        return next_player_id
+        try:
+            # First try to get the player using parameterized query
+            result = self.conn.execute(
+                "SELECT player_id FROM players WHERE player_name = ?",
+                (player_name,)
+            ).fetchone()
+            
+            if result:
+                logger.debug(f"Found existing player: {player_name} with ID: {result[0]}")
+                return result[0]
+            
+            # Player doesn't exist, create new player
+            # Get the next player_id (max + 1)
+            result = self.conn.execute("""
+                SELECT COALESCE(MAX(player_id), 0) + 1 FROM players
+            """).fetchone()
+            
+            next_player_id = result[0]
+            
+            # Insert the new player using parameterized query
+            self.conn.execute(
+                "INSERT INTO players (player_id, player_name) VALUES (?, ?)",
+                (next_player_id, player_name)
+            )
+            
+            logger.info(f"Created new player: {player_name} with ID: {next_player_id}")
+            return next_player_id
+            
+        except Exception as e:
+            logger.error(f"Error in _get_or_create_player for '{player_name}': {str(e)}")
+            # Re-raise to allow transaction rollback in calling methods
+            raise
     
     def get_all_games(self) -> List[Dict[str, Any]]:
         """
@@ -503,7 +548,7 @@ class PokerDBManager:
             List of dictionaries with player statistics
         """
         try:
-            query = """
+            base_query = """
                 SELECT 
                     p.player_name,
                     COUNT(DISTINCT gp.game_id) AS games_played,
@@ -517,12 +562,13 @@ class PokerDBManager:
                 JOIN game_players gp ON p.player_id = gp.player_id
             """
             
+            # Use parameterized query if player_name is provided
             if player_name:
-                query += f" WHERE p.player_name = '{player_name}'"
-                
-            query += " GROUP BY p.player_name ORDER BY total_income DESC"
-            
-            result = self.conn.execute(query).fetchall()
+                query = base_query + " WHERE p.player_name = ? GROUP BY p.player_name ORDER BY avg_rank ASC, total_income DESC"
+                result = self.conn.execute(query, (player_name,)).fetchall()
+            else:
+                query = base_query + " GROUP BY p.player_name ORDER BY avg_rank ASC, total_income DESC"
+                result = self.conn.execute(query).fetchall()
             
             players_stats = []
             for row in result:
@@ -702,7 +748,7 @@ class PokerDBManager:
                 FROM players p
                 JOIN game_players gp ON p.player_id = gp.player_id
                 GROUP BY p.player_name
-                ORDER BY net_income DESC
+                ORDER BY avg_rank ASC, net_income DESC
             """
             
             result = self.conn.execute(query).fetchall()

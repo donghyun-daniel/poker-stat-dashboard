@@ -84,7 +84,7 @@ def display_results(data):
         return f'color: {color}'
     
     # Style the DataFrame
-    styled_df = players_df.style.applymap(
+    styled_df = players_df.style.map(
         highlight_negative, 
         subset=['Profit/Loss']
     )

@@ -8,6 +8,24 @@ font = "sans serif"
 [server]
 enableCORS = true
 enableXsrfProtection = true
+headless = true
+port = 8501
+runOnSave = false
+maxUploadSize = 50
+maxMessageSize = 100
 
 [browser]
-gatherUsageStats = false 
+gatherUsageStats = false
+
+[logger]
+level = "info"
+
+[runner]
+magicEnabled = false
+installTracer = false
+fixMatplotlib = true
+
+[client]
+showErrorDetails = true
+caching = true
+displayEnabled = true 

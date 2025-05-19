@@ -9,32 +9,12 @@ font = "sans serif"
 enableCORS = true
 enableXsrfProtection = true
 headless = true
-port = 8501
-runOnSave = false
-maxUploadSize = 50
-maxMessageSize = 100
-enableStaticServing = true
 
 [browser]
 gatherUsageStats = false
-serverAddress = "localhost"
-serverPort = 8501
 
 [logger]
 level = "info"
 
-[runner]
-magicEnabled = false
-installTracer = false
-fixMatplotlib = true
-fastReruns = false
-
 [client]
-showErrorDetails = true
-caching = true
-displayEnabled = true
-
-[global]
-developmentMode = false
-disableWatchdogWarning = true
-suppressDeprecationWarnings = true 
+showErrorDetails = true 

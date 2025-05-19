@@ -4,7 +4,12 @@
 echo "가상 환경 활성화 중..."
 source venv/bin/activate
 
-echo "Python 3.12.10 환경 사용 중..."
+echo "Python 버전 확인 중..."
+python --version
+
+# 데이터베이스 초기화 스크립트 실행
+echo "데이터베이스 초기화 중..."
+python init_db.py
 
 # 기본 도구 설치 (distutils 관련 패키지 포함)
 echo "기본 패키지 설치 중..."

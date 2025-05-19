@@ -12,6 +12,7 @@ A web application for analyzing PokerNow game logs and providing player statisti
 - Browse game history and detailed results
 - Visualize game data with interactive charts
 - Mobile-friendly interface for easy access anywhere
+- Automatic database management with proper permissions
 
 ## Database Features
 
@@ -19,6 +20,8 @@ A web application for analyzing PokerNow game logs and providing player statisti
 - **Player Tracking**: Maintains player statistics across multiple games
 - **Historical Analysis**: View trends and statistics over time
 - **Game Comparison**: Compare results between different game sessions
+- **Automatic Initialization**: Database files are automatically created and initialized with proper permissions
+- **Data Protection**: Automatic backup of database files during initialization
 
 ## Online Access
 
@@ -49,7 +52,7 @@ pip install -r requirements.txt
 
 4. Start the application:
 ```bash
-# Use the start script to run both API and UI
+# Use the start script to run both API and UI (recommended)
 ./start.sh
 
 # Or run them separately:
@@ -59,11 +62,20 @@ python main.py
 python run_streamlit.py
 ```
 
-5. Test database functionality:
+5. Manual database initialization (if needed):
 ```bash
-# Parse a log file and store in database
-python test_db.py path/to/poker_log.csv
+# Run the database initialization script
+python init_db.py
 ```
+
+## Data Management
+
+The application creates a `data` directory to store the DuckDB database files. During initialization:
+
+1. The data directory is created with appropriate permissions if it doesn't exist
+2. Existing database files are automatically backed up
+3. All database files have proper permissions set for read/write access
+4. The database is initialized with tables for games, players, and statistics
 
 ## How to Use
 
@@ -90,6 +102,14 @@ Player rankings are determined as follows:
 2. Players who remained active until the end are ranked by **income**
    - Income = Final chips - Total rebuy amount
    - Higher income results in higher ranking
+
+## Troubleshooting
+
+If you encounter permission issues with the database:
+
+1. Run the initialization script manually: `python init_db.py`
+2. Check the logs for detailed error messages
+3. Ensure the application has write permissions to the `data` directory
 
 ## License
 

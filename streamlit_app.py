@@ -25,10 +25,7 @@ try:
 except Exception as e:
     print(f"Warning: Failed to apply distutils patch for Python 3.12: {e}")
 
-# Add path to the project root to allow imports from app modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-# Show a simple loading message while the app initializes
+# 기본 설정 및 초기화
 st.set_page_config(
     page_title="🃏 Poker Stats Dashboard",
     page_icon="🎮",
@@ -36,18 +33,31 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-try:
-    # Import the main application module
-    from app.ui.main import run_app
+# 로딩 메시지 표시
+st.markdown("## 🃏 Poker Stats Dashboard")
+with st.spinner("애플리케이션을 초기화하는 중입니다..."):
+    # 프로젝트 경로 설정
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
     
-    # Run the application
-    run_app()
+    # 데이터 디렉토리 확인 및 생성
+    data_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    if not os.path.exists(data_dir):
+        os.makedirs(data_dir)
     
-except ImportError as e:
-    st.error(f"Failed to import required modules: {e}")
-    st.info("Please make sure all dependencies are installed correctly.")
-    st.code("pip install -r requirements.txt")
-    
-except Exception as e:
-    st.error(f"Error starting the application: {e}")
-    st.info("Please check the logs for more details.") 
+    try:
+        # 메인 애플리케이션 모듈 가져오기
+        from app.ui.main import run_app
+        
+        # 애플리케이션 실행
+        run_app()
+        
+    except ImportError as e:
+        st.error(f"필요한 모듈을 가져올 수 없습니다: {e}")
+        st.info("모든 의존성이 올바르게 설치되었는지 확인하세요.")
+        st.code("pip install -r requirements.txt")
+        
+    except Exception as e:
+        st.error(f"애플리케이션 시작 중 오류가 발생했습니다: {e}")
+        st.info("자세한 내용은 로그를 확인하세요.")
+        # 오류 세부 정보 표시
+        st.exception(e) 
